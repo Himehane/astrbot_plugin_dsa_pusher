@@ -44,6 +44,7 @@ Configure via AstrBot Web UI → Plugin Settings:
 
 | Key | Description | Default |
 |-----|-------------|---------|
+| `debug` | Debug mode: `true`=verbose logs with target IDs, `false`=warnings/errors only | `false` |
 | `target_user_ids` | Push target list (raw IDs, platform prefix auto-appended) | `[]` |
 | `output_mode` | Output mode: `text` or `image` | `text` |
 | `split_image` | Split into multiple images by section (image mode only) | `false` |
@@ -81,6 +82,7 @@ In image mode:
 
 ## Version History
 
+- **v1.1.0** — Added debug config toggle; quiet logs by default, verbose logs with target IDs in debug mode
 - **v1.0.0** — Initial release. Complete rewrite with split_image config, source-adaptive processing, multi-target push, full panel configuration
 
 ## Acknowledgements

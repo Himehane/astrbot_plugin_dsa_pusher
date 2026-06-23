@@ -17,7 +17,7 @@ from aiohttp import web
     "astrbot_plugin_dsa_pusher",
     "Himehane",
     "DSA推送器 - 接收股票分析报告并推送到聊天平台",
-    "v1.0.0",
+    "v1.1.0",
 )
 class DSAPusher(Star):
     """
@@ -46,6 +46,12 @@ class DSAPusher(Star):
         self.target_user_ids: List[str] = config.get("target_user_ids", [])
         # 多图拆分开关：默认为 false，整张长图保底
         self.split_image: bool = config.get("split_image", False)
+        # 调试日志开关：默认为 false，只显示警告/错误
+        _debug_val = config.get("debug", False)
+        if isinstance(_debug_val, str):
+            self.debug = _debug_val.lower() in ("true", "1", "yes")
+        else:
+            self.debug = bool(_debug_val)
 
         # 记录已缓存的平台标识和上下文
         self._cached_platform = None
@@ -67,11 +73,12 @@ class DSAPusher(Star):
         """初始化插件，启动 HTTP 服务"""
         try:
             await self.start_http_server()
-            logger.info(
-                f"每日股票分析适配器: 插件已启动, 监听端口 {self.webhook_port}, "
-                f"路径 {self.webhook_path}, 模式={self.output_mode}, "
-                f"拆分={self.split_image}"
-            )
+            if self.debug:
+                logger.info(
+                    f"每日股票分析适配器: 插件已启动, 监听端口 {self.webhook_port}, "
+                    f"路径 {self.webhook_path}, 模式={self.output_mode}, "
+                    f"拆分={self.split_image}"
+                )
         except Exception as e:
             logger.error(f"每日股票分析适配器: 初始化失败: {e}")
             raise
@@ -84,7 +91,8 @@ class DSAPusher(Star):
                 self.runner = None
                 self.site = None
                 self.web_app = None
-            logger.info("每日股票分析适配器: 插件已停止")
+            if self.debug:
+                logger.info("每日股票分析适配器: 插件已停止")
         except Exception as e:
             logger.error(f"每日股票分析适配器: 插件终止时出错: {e}")
 
@@ -103,7 +111,8 @@ class DSAPusher(Star):
 
         self.site = web.TCPSite(self.runner, "0.0.0.0", self.webhook_port)
         await self.site.start()
-        logger.info(f"每日股票分析适配器: HTTP 服务已启动在端口 {self.webhook_port}")
+        if self.debug:
+            logger.info(f"每日股票分析适配器: HTTP 服务已启动在端口 {self.webhook_port}")
 
     async def health_check(self, request):
         """健康检查接口"""
@@ -123,9 +132,10 @@ class DSAPusher(Star):
             headers = dict(request.headers)
 
             content_len = len(data.get("content", ""))
-            logger.info(
-                f"每日股票分析适配器: 收到 Webhook, content_len={content_len}"
-            )
+            if self.debug:
+                logger.info(
+                    f"每日股票分析适配器: 收到 Webhook, content_len={content_len}"
+                )
 
             if not data.get("content"):
                 logger.warning("每日股票分析适配器: 请求缺少 content 字段")
@@ -179,9 +189,10 @@ class DSAPusher(Star):
                 pid = getattr(inst, "platform_meta", {}).get("platform", "")
                 if pid and pid not in ("web", "cli"):
                     self._cached_platform = pid
-                    logger.info(
-                        f"每日股票分析适配器: 自动检测到平台 {pid}"
-                    )
+                    if self.debug:
+                        logger.info(
+                            f"每日股票分析适配器: 自动检测到平台 {pid}"
+                        )
                     return pid
         except Exception as e:
             logger.warning(f"每日股票分析适配器: 检测平台失败: {e}")
@@ -273,18 +284,21 @@ class DSAPusher(Star):
         """
         if self.split_image:
             sections = self._split_md_for_mobile(md_content)
-            logger.info(
-                f"每日股票分析适配器: MD 已拆分为 {len(sections)} 段"
-            )
+            if self.debug:
+                logger.info(
+                    f"每日股票分析适配器: MD 已拆分为 {len(sections)} 段"
+                )
         else:
             sections = [md_content]
-            logger.info("每日股票分析适配器: 整篇渲染为一张长图")
+            if self.debug:
+                logger.info("每日股票分析适配器: 整篇渲染为一张长图")
 
         local_paths = []
         for i, chunk_md in enumerate(sections, 1):
-            logger.info(
-                f"每日股票分析适配器: 渲染第 {i}/{len(sections)} 段..."
-            )
+            if self.debug:
+                logger.info(
+                    f"每日股票分析适配器: 渲染第 {i}/{len(sections)} 段..."
+                )
 
             body_html = self._md_to_html(chunk_md)
             html_doc = self._wrap_html(body_html)
@@ -309,9 +323,10 @@ class DSAPusher(Star):
             from astrbot.core.utils.io import download_image_by_url
 
             local_path = await download_image_by_url(url)
-            logger.info(
-                f"每日股票分析适配器: 第{seq}段图片已下载: {local_path}"
-            )
+            if self.debug:
+                logger.info(
+                    f"每日股票分析适配器: 第{seq}段图片已下载: {local_path}"
+                )
             return local_path
         except Exception as e:
             logger.warning(
@@ -450,9 +465,10 @@ class DSAPusher(Star):
                 "device_scale_factor_level": self.device_scale_factor_level,
             }
             url = await self.context.html_render(payload)
-            logger.info(
-                f"每日股票分析适配器: 渲染完成, url_len={len(url)}"
-            )
+            if self.debug:
+                logger.info(
+                    f"每日股票分析适配器: 渲染完成, url_len={len(url)}"
+                )
             return url
         except Exception as e:
             logger.error(f"每日股票分析适配器: 渲染图片失败: {e}")
@@ -472,10 +488,11 @@ class DSAPusher(Star):
         failed_targets = []
         for target_id in target_ids:
             try:
-                logger.info(
-                    f"每日股票分析适配器: 向 {target_id} 发送 "
-                    f"{len(chunks)} 段 ({mode}模式)..."
-                )
+                if self.debug:
+                    logger.info(
+                        f"每日股票分析适配器: 向 {target_id} 发送 "
+                        f"{len(chunks)} 段 ({mode}模式)..."
+                    )
 
                 if mode == "text":
                     # 文字模式：整篇推送
@@ -492,31 +509,34 @@ class DSAPusher(Star):
                         await self.context.send_message(target_id, msg)
                         await asyncio.sleep(0.5)
 
-                logger.info(
-                    f"每日股票分析适配器: 向 {target_id} 推送成功"
-                )
+                if self.debug:
+                    logger.info(
+                        f"每日股票分析适配器: 向 {target_id} 推送成功"
+                    )
             except Exception as e:
                 error_msg = str(e)
+                tid_display = target_id if self.debug else "(已隐藏)"
                 # 检测 context token 缺失
                 if "context" in error_msg.lower() or "token" in error_msg.lower():
                     logger.warning(
-                        f"每日股票分析适配器: 向 {target_id} 推送失败, "
+                        f"每日股票分析适配器: 向 {tid_display} 推送失败, "
                         f"可能是缺少对话上下文。请先向机器人发送任意一条消息"
                         f'(如"你好")建立对话后再试。'
                     )
                 else:
                     logger.error(
-                        f"每日股票分析适配器: 向 {target_id} 推送失败: {e}"
+                        f"每日股票分析适配器: 向 {tid_display} 推送失败: {e}"
                     )
                 failed_targets.append(target_id)
 
         if failed_targets:
+            ft_display = failed_targets if self.debug else f"{len(failed_targets)}个(已隐藏)"
             logger.warning(
                 f"每日股票分析适配器: 推送完成, "
                 f"{len(failed_targets)}/{len(target_ids)} 个目标失败: "
-                f"{failed_targets}"
+                f"{ft_display}"
             )
-        else:
+        elif self.debug:
             logger.info(
                 f"每日股票分析适配器: 推送完成, "
                 f"全部 {len(target_ids)} 个目标成功"
