@@ -1,0 +1,42 @@
+name: astrbot_plugin_dsa_pusher
+display_name: DSA推送器
+desc: 接收股票分析报告并通过Astrbot推送到聊天平台，支持文字/图片双模式、多图拆分、多目标推送
+version: v1.0.0
+author: Himehane
+repo: https://github.com/Himehane/astrbot_plugin_dsa_pusher
+
+config:
+  - name: output_mode
+    type: string
+    default: text
+    description: 输出模式, text=文字推送, image=图片推送
+    enum: [text, image]
+  - name: split_image
+    type: bool
+    default: false
+    description: 图片模式下是否按章节拆分为多张图片, false=整张长图(默认), true=多张竖版小图
+  - name: target_user_ids
+    type: list
+    default: []
+    description: 推送目标用户/群ID列表。只需填裸ID(如wx_user123)，代码自动补全平台前缀
+  - name: webhook_port
+    type: int
+    default: 8080
+    description: Webhook监听端口
+  - name: webhook_path
+    type: string
+    default: /stock-analysis
+    description: Webhook路径
+  - name: image_quality
+    type: int
+    default: 85
+    description: 图片质量(0-100)
+  - name: device_scale_factor_level
+    type: string
+    default: normal
+    description: 渲染缩放级别
+    enum: [low, normal, high]
+  - name: viewport_width
+    type: int
+    default: 800
+    description: 渲染视口宽度
