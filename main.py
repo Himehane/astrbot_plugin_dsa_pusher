@@ -1,16 +1,16 @@
 import asyncio
-import re
 import hashlib
 import hmac
 import json
+import re
 import time
-from typing import Optional, List
 
-from astrbot.api.star import Context, Star, register
-from astrbot.api import logger
-from astrbot.api.message_components import Plain, Image
-from astrbot.core.message.message_event_result import MessageChain
 from aiohttp import web
+
+from astrbot.api import logger
+from astrbot.api.message_components import Image, Plain
+from astrbot.api.star import Context, Star, register
+from astrbot.core.message.message_event_result import MessageChain
 
 
 @register(
@@ -32,7 +32,9 @@ class DSAPusher(Star):
         self.secret_key = config.get("secret_key")
         self.enable_signature_verification = False  # 强制关闭签名验证
         self.image_quality = int(config.get("image_quality", 85))
-        self.device_scale_factor_level = config.get("device_scale_factor_level", "normal")
+        self.device_scale_factor_level = config.get(
+            "device_scale_factor_level", "normal"
+        )
         self.viewport_width = int(config.get("viewport_width", 800))
         self.web_app = None
         self.today_stock_report = None
@@ -43,7 +45,7 @@ class DSAPusher(Star):
         # 输出模式: "text" 或 "image"
         self.output_mode = config.get("output_mode", "text")
         # 多目标：使用者只填裸用户/群 ID，代码自动补全平台前缀
-        self.target_user_ids: List[str] = config.get("target_user_ids", [])
+        self.target_user_ids: list[str] = config.get("target_user_ids", [])
         # 多图拆分开关：默认为 false，整张长图保底
         self.split_image: bool = config.get("split_image", False)
         # 调试日志开关：默认为 false，只显示警告/错误
@@ -112,7 +114,9 @@ class DSAPusher(Star):
         self.site = web.TCPSite(self.runner, "0.0.0.0", self.webhook_port)
         await self.site.start()
         if self.debug:
-            logger.info(f"每日股票分析适配器: HTTP 服务已启动在端口 {self.webhook_port}")
+            logger.info(
+                f"每日股票分析适配器: HTTP 服务已启动在端口 {self.webhook_port}"
+            )
 
     async def health_check(self, request):
         """健康检查接口"""
@@ -177,7 +181,7 @@ class DSAPusher(Star):
     #  平台检测与目标构造
     # ================================================================
 
-    def _detect_platform(self) -> Optional[str]:
+    def _detect_platform(self) -> str | None:
         """
         自动检测第一个支持主动推送的已连接平台。
         返回平台 ID (如 'wechatcom_official')，或 None。
@@ -190,15 +194,13 @@ class DSAPusher(Star):
                 if pid and pid not in ("web", "cli"):
                     self._cached_platform = pid
                     if self.debug:
-                        logger.info(
-                            f"每日股票分析适配器: 自动检测到平台 {pid}"
-                        )
+                        logger.info(f"每日股票分析适配器: 自动检测到平台 {pid}")
                     return pid
         except Exception as e:
             logger.warning(f"每日股票分析适配器: 检测平台失败: {e}")
         return None
 
-    def _construct_target_ids(self) -> List[str]:
+    def _construct_target_ids(self) -> list[str]:
         """
         根据 target_user_ids 和自动检测的平台构造完整 target_id。
         如果用户已经填了完整标识符则直接使用。
@@ -255,9 +257,7 @@ class DSAPusher(Star):
                 await self._process_image_mode(content)
 
         except Exception as e:
-            logger.error(
-                f"每日股票分析适配器: 处理股票分析数据时出错: {e}"
-            )
+            logger.error(f"每日股票分析适配器: 处理股票分析数据时出错: {e}")
             raise
 
     # ================================================================
@@ -285,9 +285,7 @@ class DSAPusher(Star):
         if self.split_image:
             sections = self._split_md_for_mobile(md_content)
             if self.debug:
-                logger.info(
-                    f"每日股票分析适配器: MD 已拆分为 {len(sections)} 段"
-                )
+                logger.info(f"每日股票分析适配器: MD 已拆分为 {len(sections)} 段")
         else:
             sections = [md_content]
             if self.debug:
@@ -296,9 +294,7 @@ class DSAPusher(Star):
         local_paths = []
         for i, chunk_md in enumerate(sections, 1):
             if self.debug:
-                logger.info(
-                    f"每日股票分析适配器: 渲染第 {i}/{len(sections)} 段..."
-                )
+                logger.info(f"每日股票分析适配器: 渲染第 {i}/{len(sections)} 段...")
 
             body_html = self._md_to_html(chunk_md)
             html_doc = self._wrap_html(body_html)
@@ -317,22 +313,17 @@ class DSAPusher(Star):
 
         await self._send_to_targets(local_paths, mode="image")
 
-    async def _download_image(self, url: str, seq: int) -> Optional[str]:
+    async def _download_image(self, url: str, seq: int) -> str | None:
         """下载图片到本地临时路径"""
         try:
             from astrbot.core.utils.io import download_image_by_url
 
             local_path = await download_image_by_url(url)
             if self.debug:
-                logger.info(
-                    f"每日股票分析适配器: 第{seq}段图片已下载: {local_path}"
-                )
+                logger.info(f"每日股票分析适配器: 第{seq}段图片已下载: {local_path}")
             return local_path
         except Exception as e:
-            logger.warning(
-                f"每日股票分析适配器: 第{seq}段图片下载失败: {e}, "
-                f"改用 URL"
-            )
+            logger.warning(f"每日股票分析适配器: 第{seq}段图片下载失败: {e}, 改用 URL")
             return None
 
     # ================================================================
@@ -340,7 +331,7 @@ class DSAPusher(Star):
     # ================================================================
 
     @staticmethod
-    def _split_md_for_mobile(md_content: str) -> List[str]:
+    def _split_md_for_mobile(md_content: str) -> list[str]:
         """
         将 Markdown 按标题拆分成多个段落 (仅图片模式 + 拆分启用时使用)
 
@@ -466,9 +457,7 @@ class DSAPusher(Star):
             }
             url = await self.context.html_render(payload)
             if self.debug:
-                logger.info(
-                    f"每日股票分析适配器: 渲染完成, url_len={len(url)}"
-                )
+                logger.info(f"每日股票分析适配器: 渲染完成, url_len={len(url)}")
             return url
         except Exception as e:
             logger.error(f"每日股票分析适配器: 渲染图片失败: {e}")
@@ -510,9 +499,7 @@ class DSAPusher(Star):
                         await asyncio.sleep(0.5)
 
                 if self.debug:
-                    logger.info(
-                        f"每日股票分析适配器: 向 {target_id} 推送成功"
-                    )
+                    logger.info(f"每日股票分析适配器: 向 {target_id} 推送成功")
             except Exception as e:
                 error_msg = str(e)
                 tid_display = target_id if self.debug else "(已隐藏)"
@@ -524,13 +511,13 @@ class DSAPusher(Star):
                         f'(如"你好")建立对话后再试。'
                     )
                 else:
-                    logger.error(
-                        f"每日股票分析适配器: 向 {tid_display} 推送失败: {e}"
-                    )
+                    logger.error(f"每日股票分析适配器: 向 {tid_display} 推送失败: {e}")
                 failed_targets.append(target_id)
 
         if failed_targets:
-            ft_display = failed_targets if self.debug else f"{len(failed_targets)}个(已隐藏)"
+            ft_display = (
+                failed_targets if self.debug else f"{len(failed_targets)}个(已隐藏)"
+            )
             logger.warning(
                 f"每日股票分析适配器: 推送完成, "
                 f"{len(failed_targets)}/{len(target_ids)} 个目标失败: "
@@ -538,8 +525,7 @@ class DSAPusher(Star):
             )
         elif self.debug:
             logger.info(
-                f"每日股票分析适配器: 推送完成, "
-                f"全部 {len(target_ids)} 个目标成功"
+                f"每日股票分析适配器: 推送完成, 全部 {len(target_ids)} 个目标成功"
             )
 
     # ================================================================
@@ -573,19 +559,15 @@ class DSAPusher(Star):
             md = h.handle(content).strip()
             return md
         except ImportError:
-            logger.warning(
-                "每日股票分析适配器: html2text 未安装, 回退原始内容"
-            )
+            logger.warning("每日股票分析适配器: html2text 未安装, 回退原始内容")
             return content
 
     # ================================================================
-    #  聊天指令: 切换输出模式
-# ================================================================
-#  模块级辅助函数
-# ================================================================
+    #  模块级辅助函数
+    # ================================================================
 
 
-def _split_by_heading(text: str, pattern: str) -> List[str]:
+def _split_by_heading(text: str, pattern: str) -> list[str]:
     """按标题正则拆分文本"""
     lines = text.split("\n")
     sections = []
@@ -630,7 +612,7 @@ def _convert_pipe_tables(html: str) -> str:
     return "\n".join(result)
 
 
-def _pipe_table_to_html(table_lines: List[str]) -> str:
+def _pipe_table_to_html(table_lines: list[str]) -> str:
     """
     将管道符表格行转换为 HTML 表格字符串。
 
