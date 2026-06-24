@@ -5,13 +5,11 @@ import json
 import re
 import time
 
-from wcwidth import wcswidth
-
 from aiohttp import web
 
 from astrbot.api import logger
-from astrbot.api.event import filter, AstrMessageEvent
-from astrbot.api.message_components import Image, Plain
+from astrbot.api.event import AstrMessageEvent, filter
+from astrbot.api.message_components import Image
 from astrbot.api.star import Context, Star, register
 from astrbot.core.message.message_event_result import MessageChain
 
@@ -248,12 +246,12 @@ class DSAPusher(Star):
 
         url = f"{self.dsa_api_base.rstrip('/')}/{path.lstrip('/')}"
         try:
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as session:
+            async with aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=timeout)
+            ) as session:
                 async with session.get(url) as resp:
                     if resp.status != 200:
-                        logger.warning(
-                            f"DSA API 返回 {resp.status}: {url}"
-                        )
+                        logger.warning(f"DSA API 返回 {resp.status}: {url}")
                         return None
                     return await resp.json()
         except Exception as e:
@@ -280,6 +278,7 @@ class DSAPusher(Star):
         text = event.get_message_str().strip()
         n = 5  # 默认
         import re as _re
+
         m = _re.search(r"(\d+)", text)
         if m:
             n = int(m.group(1))
@@ -372,7 +371,7 @@ class DSAPusher(Star):
                 sign = ""
 
             if vol >= 10000:
-                vol_str = f"{vol/10000:.1f}万手"
+                vol_str = f"{vol / 10000:.1f}万手"
             else:
                 vol_str = f"{vol:.0f}手"
 
@@ -402,7 +401,9 @@ class DSAPusher(Star):
         text = event.get_message_str().strip()
         parts = text.split(None, 1)
         if len(parts) < 2:
-            yield event.plain_result("❌ 用法：历史分析 <股票代码或名称>\n例：历史分析 301491")
+            yield event.plain_result(
+                "❌ 用法：历史分析 <股票代码或名称>\n例：历史分析 301491"
+            )
             return
 
         keyword = parts[1].strip()
@@ -428,7 +429,9 @@ class DSAPusher(Star):
                     break
 
         if not matched:
-            yield event.plain_result(f"❌ 未找到「{keyword}」的历史分析记录\n该股可能还未被分析过")
+            yield event.plain_result(
+                f"❌ 未找到「{keyword}」的历史分析记录\n该股可能还未被分析过"
+            )
             return
 
         stock_display = f"{matched['stock_name']}({matched['stock_code']})"
@@ -442,7 +445,7 @@ class DSAPusher(Star):
             return
 
         content = report_data["content"]
-        yield event.plain_result(f"✅ 已获取，正在推送...")
+        yield event.plain_result("✅ 已获取，正在推送...")
 
         # 按输出模式分流
         if self.output_mode == "markdown":
@@ -498,7 +501,9 @@ class DSAPusher(Star):
             stock_name = item["stock_name"]
             record_id = item["id"]
 
-            yield event.plain_result(f"[{i}/{total}] ⏳ 正在获取 {stock_name}({code}) 报告...")
+            yield event.plain_result(
+                f"[{i}/{total}] ⏳ 正在获取 {stock_name}({code}) 报告..."
+            )
 
             report_data = await self._api_get(f"api/v1/history/{record_id}/markdown")
             if not report_data or "content" not in report_data:
@@ -516,7 +521,9 @@ class DSAPusher(Star):
 
             pushed += 1
 
-        yield event.plain_result(f"✅ 完成！已推送 {pushed}/{total} 只自选股的历史分析报告")
+        yield event.plain_result(
+            f"✅ 完成！已推送 {pushed}/{total} 只自选股的历史分析报告"
+        )
 
     @filter.command("大盘复盘")
     async def cmd_market_review(self, event: AstrMessageEvent):
@@ -543,10 +550,17 @@ class DSAPusher(Star):
             return
 
         # history 返回列表，找到第一个 report_type=market_review 的记录
-        records = data if isinstance(data, list) else data.get("history", data.get("records", []))
+        records = (
+            data
+            if isinstance(data, list)
+            else data.get("history", data.get("records", []))
+        )
         target = None
         for r in records:
-            if r.get("stock_code") == "MARKET" and r.get("report_type") == "market_review":
+            if (
+                r.get("stock_code") == "MARKET"
+                and r.get("report_type") == "market_review"
+            ):
                 target = r
                 break
 
@@ -564,7 +578,7 @@ class DSAPusher(Star):
             return
 
         content = md_data["content"]
-        yield event.plain_result(f"✅ 正在推送...")
+        yield event.plain_result("✅ 正在推送...")
 
         if self.output_mode == "markdown":
             await self._process_markdown_mode(content)
@@ -604,7 +618,7 @@ class DSAPusher(Star):
                 yield event.plain_result("❌ 暂无历史任务")
                 return
             task_id = data["tasks"][0]["task_id"]
-            yield event.plain_result(f"⏳ 正在拉取最新报告...")
+            yield event.plain_result("⏳ 正在拉取最新报告...")
 
         # 拉取报告
         data = await self._api_get(f"api/v1/analysis/status/{task_id}")
@@ -620,10 +634,12 @@ class DSAPusher(Star):
             if result and isinstance(result, dict):
                 report = result.get("report") or result.get("markdown")
         if not report:
-            yield event.plain_result(f"⚠️ 任务 {data.get('stock_name', '')} 暂无报告内容")
+            yield event.plain_result(
+                f"⚠️ 任务 {data.get('stock_name', '')} 暂无报告内容"
+            )
             return
 
-        yield event.plain_result(f"✅ 已获取报告，正在推送...")
+        yield event.plain_result("✅ 已获取报告，正在推送...")
 
         # 按输出模式分流
         content = self._normalize_content(report)
@@ -998,7 +1014,6 @@ class DSAPusher(Star):
             return ""
         lines = content.split("\n")
 
-
         cleaned: list[str] = []
 
         in_code_block = False
@@ -1095,70 +1110,92 @@ class DSAPusher(Star):
     @staticmethod
     def _format_table_block(table_lines: list[str]) -> list[str]:
         """将 Markdown 表格转为微信友好的纯文本卡片格式
+
+        转换规则:
         - 所有表格统一用卡片式展示
         - 第一列作为卡片标题，其他列作为键值对列出
+        - 数字排名自动与第二列合并为标题（如: "1. 餐饮业"）
         - 卡片之间用 ━━━━━ 分隔，最后一个卡片后也加分隔线
+
+        Args:
+            table_lines: Markdown 表格行列表
+
+        Returns:
+            格式化后的文本行列表
         """
-        # 解析所有数据行
-        rows: list[list[str]] = []
-        for line in table_lines:
-            cells = [c.strip() for c in line.strip().strip("|").split("|")]
-            if all(re.match(r"^[-:]+$", c) for c in cells if c):
-                continue
-            rows.append(cells)
+        try:
+            # 解析所有数据行
+            rows: list[list[str]] = []
+            for line in table_lines:
+                # 跳过空行和无效行
+                if not line.strip():
+                    continue
+                # 分割单元格
+                cells = [c.strip() for c in line.strip().strip("|").split("|")]
+                # 跳过分隔行 (如 | --- | --- |)
+                if all(re.match(r"^[-:]+$", c) for c in cells if c):
+                    continue
+                rows.append(cells)
 
-        if not rows:
-            return []
+            if not rows:
+                return []
 
-        ncols = max(len(r) for r in rows)
-        if ncols == 0:
-            return []
+            ncols = max(len(r) for r in rows)
+            if ncols == 0:
+                return []
 
-        # 补齐列数不一致的行
-        for r in rows:
-            while len(r) < ncols:
-                r.append("")
+            # 补齐列数不一致的行
+            for r in rows:
+                while len(r) < ncols:
+                    r.append("")
 
-        # ---- 所有表格统一卡片式展示 ----
-        header = rows[0]
-        result: list[str] = []
+            # ---- 所有表格统一卡片式展示 ----
+            header = rows[0]
+            result: list[str] = []
 
-        for idx, row in enumerate(rows[1:]):  # 跳过表头
-            # 第一列当标题
-            title = row[0] if row[0] else f"项目{idx+1}"
-            
-            # 如果第一列是数字（排名），和第二列合并作为标题
-            # 例如: "1" + "餐饮业" → "1. 餐饮业"
-            if title.isdigit() and ncols >= 3 and row[1]:
-                title = f"{title}. {row[1]}"
-                skip_col = 2  # 跳过第二列（已合并到标题）
-            else:
-                skip_col = 1  # 从第二列开始列出
+            for idx, row in enumerate(rows[1:]):  # 跳过表头
+                # 第一列当标题
+                title = row[0] if row[0] else f"项目{idx + 1}"
 
-            lines = [f"📋 {title}", ""]
+                # 如果第一列是数字（排名），和第二列合并作为标题
+                # 例如: "1" + "餐饮业" → "1. 餐饮业"
+                if title.isdigit() and ncols >= 3 and row[1]:
+                    title = f"{title}. {row[1]}"
+                    skip_col = 2  # 跳过第二列（已合并到标题）
+                else:
+                    skip_col = 1  # 从第二列开始列出
 
-            # 其他列全部列出
-            for i in range(skip_col, ncols):
-                key = header[i] if i < len(header) else f"列{i+1}"
-                value = row[i] if i < len(row) else ""
-                if value:  # 只列出有值的列
-                    lines.append(f"{key}：{value}")
+                lines = [f"📋 {title}", ""]
 
-            result.extend(lines)
+                # 其他列全部列出
+                for i in range(skip_col, ncols):
+                    key = header[i] if i < len(header) else f"列{i + 1}"
+                    value = row[i] if i < len(row) else ""
+                    if value:  # 只列出有值的列
+                        lines.append(f"{key}：{value}")
 
-            # 每个卡片之间加分隔线
+                result.extend(lines)
+
+                # 每个卡片之间加分隔线
+                result.append("")
+                result.append("━━━━━━━━━━━━━━━━━━")
+                result.append("")
+
+            # 去掉最后多余的空行和分隔线
+            while result and result[-1] in ("", "━━━━━━━━━━━━━━━━━━"):
+                result.pop()
+
+            # 最后加一个分隔线作为结尾，后面加空行
             result.append("")
             result.append("━━━━━━━━━━━━━━━━━━")
             result.append("")
 
-        # 去掉最后多余的空行和分隔线
-        while result and result[-1] in ("", "━━━━━━━━━━━━━━━━━━"):
-            result.pop()
+            return result
 
-        # 最后加一个分隔线作为结尾，后面加空行
-        result.append("")
-        result.append("━━━━━━━━━━━━━━━━━━")
-        result.append("")
+        except Exception as e:
+            # 表格格式化失败时，返回原始内容
+            logger.warning(f"表格格式化失败: {e}")
+            return table_lines
 
         return result
 
