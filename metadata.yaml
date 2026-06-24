@@ -1,7 +1,7 @@
 name: astrbot_plugin_dsa_pusher
 display_name: DSA推送器
-desc: 接收股票分析报告并通过Astrbot推送到聊天平台，支持文字/图片双模式、多图拆分、多目标推送
-version: v1.2.0
+desc: 接收股票分析报告并通过Astrbot推送到聊天平台，支持文字/Markdown/图片三模式、多图拆分、多目标推送
+version: v1.3.0
 author: Himehane
 repo: https://github.com/Himehane/astrbot_plugin_dsa_pusher
 
@@ -17,8 +17,8 @@ config:
   - name: output_mode
     type: string
     default: text
-    description: 输出模式, text=文字推送, image=图片推送
-    enum: [text, image]
+    description: 输出模式, text=纯文本(微信转发友好), markdown=保留MD语法(Telegram/WebUI渲染), image=图片推送
+    enum: [text, markdown, image]
   - name: split_image
     type: bool
     default: false

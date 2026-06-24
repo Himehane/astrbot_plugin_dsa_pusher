@@ -8,8 +8,8 @@ import time
 from aiohttp import web
 
 from astrbot.api import logger
-from astrbot.api.event import filter, AstrMessageEvent
-from astrbot.api.message_components import Image, Plain
+from astrbot.api.event import AstrMessageEvent, filter
+from astrbot.api.message_components import Image
 from astrbot.api.star import Context, Star, register
 from astrbot.core.message.message_event_result import MessageChain
 
@@ -23,7 +23,7 @@ from astrbot.core.message.message_event_result import MessageChain
 class DSAPusher(Star):
     """
     DSA Pusher — 接收 DSA (Daily Stock Analysis) Webhook 推送，
-    支持文字/图片双模式、多图拆分、多目标推送、微信指令查询。
+    支持文字/Markdown/图片三模式、多图拆分、多目标推送、微信指令查询。
 
     聊天指令（均以"大盘"前缀避免冲突）:
       大盘任务 [n]       — 查询最近 n 个分析任务 (默认 5)
@@ -54,7 +54,7 @@ class DSAPusher(Star):
         self.site = None
 
         # ---- 新配置项 ----
-        # 输出模式: "text" 或 "image"
+        # 输出模式: "text" (纯文本) / "markdown" (保留MD语法) / "image" (图片)
         self.output_mode = config.get("output_mode", "text")
         # 多目标：使用者只填裸用户/群 ID，代码自动补全平台前缀
         self.target_user_ids: list[str] = config.get("target_user_ids", [])
@@ -246,12 +246,12 @@ class DSAPusher(Star):
 
         url = f"{self.dsa_api_base.rstrip('/')}/{path.lstrip('/')}"
         try:
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as session:
+            async with aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=timeout)
+            ) as session:
                 async with session.get(url) as resp:
                     if resp.status != 200:
-                        logger.warning(
-                            f"DSA API 返回 {resp.status}: {url}"
-                        )
+                        logger.warning(f"DSA API 返回 {resp.status}: {url}")
                         return None
                     return await resp.json()
         except Exception as e:
@@ -278,6 +278,7 @@ class DSAPusher(Star):
         text = event.get_message_str().strip()
         n = 5  # 默认
         import re as _re
+
         m = _re.search(r"(\d+)", text)
         if m:
             n = int(m.group(1))
@@ -370,7 +371,7 @@ class DSAPusher(Star):
                 sign = ""
 
             if vol >= 10000:
-                vol_str = f"{vol/10000:.1f}万手"
+                vol_str = f"{vol / 10000:.1f}万手"
             else:
                 vol_str = f"{vol:.0f}手"
 
@@ -400,7 +401,9 @@ class DSAPusher(Star):
         text = event.get_message_str().strip()
         parts = text.split(None, 1)
         if len(parts) < 2:
-            yield event.plain_result("❌ 用法：历史分析 <股票代码或名称>\n例：历史分析 301491")
+            yield event.plain_result(
+                "❌ 用法：历史分析 <股票代码或名称>\n例：历史分析 301491"
+            )
             return
 
         keyword = parts[1].strip()
@@ -426,7 +429,9 @@ class DSAPusher(Star):
                     break
 
         if not matched:
-            yield event.plain_result(f"❌ 未找到「{keyword}」的历史分析记录\n该股可能还未被分析过")
+            yield event.plain_result(
+                f"❌ 未找到「{keyword}」的历史分析记录\n该股可能还未被分析过"
+            )
             return
 
         stock_display = f"{matched['stock_name']}({matched['stock_code']})"
@@ -440,10 +445,12 @@ class DSAPusher(Star):
             return
 
         content = report_data["content"]
-        yield event.plain_result(f"✅ 已获取，正在推送...")
+        yield event.plain_result("✅ 已获取，正在推送...")
 
-        # 走现有推送逻辑
-        if self.output_mode == "text":
+        # 按输出模式分流
+        if self.output_mode == "markdown":
+            await self._process_markdown_mode(content)
+        elif self.output_mode == "text":
             await self._process_text_mode(content)
         else:
             await self._process_image_mode(content)
@@ -494,7 +501,9 @@ class DSAPusher(Star):
             stock_name = item["stock_name"]
             record_id = item["id"]
 
-            yield event.plain_result(f"[{i}/{total}] ⏳ 正在获取 {stock_name}({code}) 报告...")
+            yield event.plain_result(
+                f"[{i}/{total}] ⏳ 正在获取 {stock_name}({code}) 报告..."
+            )
 
             report_data = await self._api_get(f"api/v1/history/{record_id}/markdown")
             if not report_data or "content" not in report_data:
@@ -503,14 +512,18 @@ class DSAPusher(Star):
             content = report_data["content"]
 
             # 报告自带标题，直接推送即可
-            if self.output_mode == "text":
+            if self.output_mode == "markdown":
+                await self._process_markdown_mode(content)
+            elif self.output_mode == "text":
                 await self._process_text_mode(content)
             else:
                 await self._process_image_mode(content)
 
             pushed += 1
 
-        yield event.plain_result(f"✅ 完成！已推送 {pushed}/{total} 只自选股的历史分析报告")
+        yield event.plain_result(
+            f"✅ 完成！已推送 {pushed}/{total} 只自选股的历史分析报告"
+        )
 
     @filter.command("大盘复盘")
     async def cmd_market_review(self, event: AstrMessageEvent):
@@ -537,10 +550,17 @@ class DSAPusher(Star):
             return
 
         # history 返回列表，找到第一个 report_type=market_review 的记录
-        records = data if isinstance(data, list) else data.get("history", data.get("records", []))
+        records = (
+            data
+            if isinstance(data, list)
+            else data.get("history", data.get("records", []))
+        )
         target = None
         for r in records:
-            if r.get("stock_code") == "MARKET" and r.get("report_type") == "market_review":
+            if (
+                r.get("stock_code") == "MARKET"
+                and r.get("report_type") == "market_review"
+            ):
                 target = r
                 break
 
@@ -558,9 +578,11 @@ class DSAPusher(Star):
             return
 
         content = md_data["content"]
-        yield event.plain_result(f"✅ 正在推送...")
+        yield event.plain_result("✅ 正在推送...")
 
-        if self.output_mode == "text":
+        if self.output_mode == "markdown":
+            await self._process_markdown_mode(content)
+        elif self.output_mode == "text":
             await self._process_text_mode(content)
         else:
             await self._process_image_mode(content)
@@ -596,7 +618,7 @@ class DSAPusher(Star):
                 yield event.plain_result("❌ 暂无历史任务")
                 return
             task_id = data["tasks"][0]["task_id"]
-            yield event.plain_result(f"⏳ 正在拉取最新报告...")
+            yield event.plain_result("⏳ 正在拉取最新报告...")
 
         # 拉取报告
         data = await self._api_get(f"api/v1/analysis/status/{task_id}")
@@ -612,14 +634,18 @@ class DSAPusher(Star):
             if result and isinstance(result, dict):
                 report = result.get("report") or result.get("markdown")
         if not report:
-            yield event.plain_result(f"⚠️ 任务 {data.get('stock_name', '')} 暂无报告内容")
+            yield event.plain_result(
+                f"⚠️ 任务 {data.get('stock_name', '')} 暂无报告内容"
+            )
             return
 
-        yield event.plain_result(f"✅ 已获取报告，正在推送...")
+        yield event.plain_result("✅ 已获取报告，正在推送...")
 
-        # 走现有的推送逻辑
+        # 按输出模式分流
         content = self._normalize_content(report)
-        if self.output_mode == "text":
+        if self.output_mode == "markdown":
+            await self._process_markdown_mode(content)
+        elif self.output_mode == "text":
             await self._process_text_mode(content)
         else:
             await self._process_image_mode(content)
@@ -636,8 +662,9 @@ class DSAPusher(Star):
           - DSA AstrBot Sender -> HTML 内容(含样式)
           - 其他来源 -> Markdown 内容
 
-        按 output_mode 分流:
-          - text 模式 -> 整篇推送，不分片(方便转发复制)
+        按 output_mode 三路分流:
+          - text 模式 -> 清理 MD 语法，纯文本推送(微信转发友好)
+          - markdown 模式 -> 保留 MD 语法，带渲染标记推送(Telegram/WebUI)
           - image 模式 -> 渲染为图片推送
 
         图片模式下根据 split_image 决定：
@@ -652,7 +679,10 @@ class DSAPusher(Star):
             # 来源格式自适应: 归一化为 Markdown
             content = self._normalize_content(content)
 
-            if self.output_mode == "text":
+            # 按输出模式分流
+            if self.output_mode == "markdown":
+                await self._process_markdown_mode(content)
+            elif self.output_mode == "text":
                 await self._process_text_mode(content)
             else:
                 await self._process_image_mode(content)
@@ -662,16 +692,33 @@ class DSAPusher(Star):
             raise
 
     # ================================================================
-    #  文字模式
+    #  文字模式 (text)
     # ================================================================
 
     async def _process_text_mode(self, content: str):
-        """文字模式：整篇推送 MD，不分片(方便转发复制)"""
-        chunks = [content]
-        await self._send_to_targets(chunks, mode="text")
+        """
+        文字模式：清理 markdown 语法，纯文本推送。
+
+        适合微信转发给好友 — 没有 **、##、``` 等语法符号，
+        纯净的文本内容，转发后一目了然。
+        """
+        clean = self._md_to_plaintext(content)
+        await self._send_to_targets([clean], mode="text")
 
     # ================================================================
-    #  图片模式
+    #  Markdown 模式
+    # ================================================================
+
+    async def _process_markdown_mode(self, content: str):
+        """
+        Markdown 模式：保留完整 markdown 语法，带渲染标记推送。
+
+        适合支持 markdown 渲染的平台 (Telegram、AstrBot WebUI 等)。
+        """
+        await self._send_to_targets([content], mode="markdown")
+
+    # ================================================================
+    #  图片模式 (image)
     # ================================================================
 
     async def _process_image_mode(self, md_content: str):
@@ -884,8 +931,16 @@ class DSAPusher(Star):
                         f"{len(chunks)} 段 ({mode}模式)..."
                     )
 
-                if mode == "text":
-                    # 文字模式：整篇推送
+                if mode == "markdown":
+                    # Markdown 模式：带渲染标记推送
+                    text = chunks[0] if chunks else ""
+                    if text:
+                        await self.context.send_message(
+                            target_id,
+                            MessageChain().message(text).use_markdown(),
+                        )
+                elif mode == "text":
+                    # 纯文本模式：整篇推送，适合微信转发
                     text = chunks[0] if chunks else ""
                     if text:
                         await self.context.send_message(
@@ -932,6 +987,217 @@ class DSAPusher(Star):
     # ================================================================
     #  内容归一化
     # ================================================================
+
+    @staticmethod
+    def _md_to_plaintext(content: str) -> str:
+        """
+        Markdown → 纯文本清理。
+
+        把 markdown 语法符号去掉，保留可读内容。
+        微信转发后不会出现 **、##、``` 等符号。
+
+        清理规则:
+          - # / ## / ### 标题 → 标题文字 (加空行分隔)
+          - **bold** → bold
+          - *italic* / _italic_ → italic
+          - ~~删除线~~ → 删除线
+          - [text](url) → text
+          - ![alt](url) → [图片]
+          - ```代码块``` → 代码内容
+          - | 表格行 | → 删掉 | 管道符，保留文字
+          - - / * / + 无序列表 → • 前缀
+          - 1. 有序列表 → 保留数字前缀
+          - > 引用块 → 去掉 > 前缀
+          - --- / *** 分隔线 → 换行
+        """
+        if not content:
+            return ""
+        lines = content.split("\n")
+
+        cleaned: list[str] = []
+
+        in_code_block = False
+        code_lines: list[str] = []
+        table_buffer: list[str] = []
+
+        for line in lines:
+            # 代码块 toggle
+            if line.strip().startswith("```"):
+                if in_code_block:
+                    # 结束代码块：输出收集的代码内容
+                    if code_lines:
+                        cleaned.append("\n".join(code_lines))
+                        code_lines = []
+                    in_code_block = False
+                else:
+                    in_code_block = True
+                continue
+
+            if in_code_block:
+                code_lines.append(line)
+                continue
+
+            # 空行保留
+            if not line.strip():
+                cleaned.append("")
+                continue
+
+            # 分隔线
+            if re.match(r"^[\s]*[-*_]{3,}\s*$", line):
+                cleaned.append("")
+                continue
+
+            # 标题: ### xxx → xxx (加空行)
+            m = re.match(r"^(#{1,6})\s+(.+)$", line)
+            if m:
+                # 遇到标题时先刷新表格缓冲区
+                if table_buffer:
+                    cleaned.extend(DSAPusher._format_table_block(table_buffer))
+                    table_buffer = []
+                cleaned.append("")
+                cleaned.append(m.group(2).strip())
+                cleaned.append("")
+                continue
+
+            # 引用: > xxx → xxx
+            line = re.sub(r"^>\s*", "", line)
+
+            # 图片: ![alt](url) → [图片]
+            line = re.sub(r"!\[([^\]]*)\]\([^)]+\)", "[图片]", line)
+
+            # 链接: [text](url) → text
+            line = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", line)
+
+            # 加粗: **text** / __text__ → text
+            line = re.sub(r"\*\*(.+?)\*\*", r"\1", line)
+            line = re.sub(r"__(.+?)__", r"\1", line)
+
+            # 行内代码: `code` → code
+            line = re.sub(r"`([^`]+)`", r"\1", line)
+
+            # 删除线: ~~text~~ → text
+            line = re.sub(r"~~(.+?)~~", r"\1", line)
+
+            # 斜体: *text* / _text_ → text (注意避开列表符号)
+            # 只在单词边界匹配，不匹配行首的列表 * 号
+            line = re.sub(r"(?<!\w)\*(?!\*)(.+?)(?<!\*)\*(?!\w)", r"\1", line)
+            line = re.sub(r"(?<!\w)_(.+?)_(?!\w)", r"\1", line)
+
+            # 表格行 → 缓冲处理（连续表格行整体格式化）
+            if "|" in line and re.match(r"^\s*\|.*\|\s*$", line):
+                table_buffer.append(line)
+                continue
+
+            # 非表格行 → 刷新缓冲区
+            if table_buffer:
+                cleaned.extend(DSAPusher._format_table_block(table_buffer))
+                table_buffer = []
+
+            # 无序列表: - xxx / * xxx / + xxx → • xxx
+            line = re.sub(r"^(\s*)[-*+]\s+", r"\1• ", line)
+
+            # 有序列表: 1. xxx → 保留原样
+            # (无需处理)
+
+            cleaned.append(line)
+
+        # 刷新剩余的表格缓冲区
+        if table_buffer:
+            cleaned.extend(DSAPusher._format_table_block(table_buffer))
+
+        return "\n".join(cleaned)
+
+    @staticmethod
+    def _format_table_block(table_lines: list[str]) -> list[str]:
+        """将 Markdown 表格转为微信友好的纯文本卡片格式
+
+        转换规则:
+        - 所有表格统一用卡片式展示
+        - 第一列作为卡片标题，其他列作为键值对列出
+        - 数字排名自动与第二列合并为标题（如: "1. 餐饮业"）
+        - 卡片之间用 ━━━━━ 分隔，最后一个卡片后也加分隔线
+
+        Args:
+            table_lines: Markdown 表格行列表
+
+        Returns:
+            格式化后的文本行列表
+        """
+        try:
+            # 解析所有数据行
+            rows: list[list[str]] = []
+            for line in table_lines:
+                # 跳过空行和无效行
+                if not line.strip():
+                    continue
+                # 分割单元格
+                cells = [c.strip() for c in line.strip().strip("|").split("|")]
+                # 跳过分隔行 (如 | --- | --- |)
+                if all(re.match(r"^[-:]+$", c) for c in cells if c):
+                    continue
+                rows.append(cells)
+
+            if not rows:
+                return []
+
+            ncols = max(len(r) for r in rows)
+            if ncols == 0:
+                return []
+
+            # 补齐列数不一致的行
+            for r in rows:
+                while len(r) < ncols:
+                    r.append("")
+
+            # ---- 所有表格统一卡片式展示 ----
+            header = rows[0]
+            result: list[str] = []
+
+            for idx, row in enumerate(rows[1:]):  # 跳过表头
+                # 第一列当标题
+                title = row[0] if row[0] else f"项目{idx + 1}"
+
+                # 如果第一列是数字（排名），和第二列合并作为标题
+                # 例如: "1" + "餐饮业" → "1. 餐饮业"
+                if title.isdigit() and ncols >= 3 and row[1]:
+                    title = f"{title}. {row[1]}"
+                    skip_col = 2  # 跳过第二列（已合并到标题）
+                else:
+                    skip_col = 1  # 从第二列开始列出
+
+                lines = [f"📋 {title}", ""]
+
+                # 其他列全部列出
+                for i in range(skip_col, ncols):
+                    key = header[i] if i < len(header) else f"列{i + 1}"
+                    value = row[i] if i < len(row) else ""
+                    if value:  # 只列出有值的列
+                        lines.append(f"{key}：{value}")
+
+                result.extend(lines)
+
+                # 每个卡片之间加分隔线
+                result.append("")
+                result.append("━━━━━━━━━━━━━━━━━━")
+                result.append("")
+
+            # 去掉最后多余的空行和分隔线
+            while result and result[-1] in ("", "━━━━━━━━━━━━━━━━━━"):
+                result.pop()
+
+            # 最后加一个分隔线作为结尾，后面加空行
+            result.append("")
+            result.append("━━━━━━━━━━━━━━━━━━")
+            result.append("")
+
+            return result
+
+        except Exception as e:
+            # 表格格式化失败时，返回原始内容
+            logger.warning(f"表格格式化失败: {e}")
+            return table_lines
+
+        return result
 
     @staticmethod
     def _is_html_content(content: str) -> bool:
