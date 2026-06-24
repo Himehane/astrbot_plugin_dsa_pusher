@@ -1061,13 +1061,18 @@ class DSAPusher(Star):
             line = re.sub(r"(?<!\w)\*(?!\*)(.+?)(?<!\*)\*(?!\w)", r"\1", line)
             line = re.sub(r"(?<!\w)_(.+?)_(?!\w)", r"\1", line)
 
-            # 表格行: | a | b | → a / b (简化对齐)
+            # 表格处理：收集连续表格行，整体转换
             if "|" in line and re.match(r"^\s*\|.*\|\s*$", line):
                 cells = [c.strip() for c in line.strip().strip("|").split("|")]
                 # 跳过分隔行 (如 | --- | --- |)
                 if all(re.match(r"^[-:]+$", c) for c in cells if c):
                     continue
-                line = " / ".join(cells)
+                # 两列表格 → key: value（更紧凑易读）
+                if len(cells) == 2:
+                    line = f"{cells[0]}: {cells[1]}"
+                # 多列表格 → header: val1, val2, val3（紧凑排列）
+                else:
+                    line = ", ".join(cells)
 
             # 无序列表: - xxx / * xxx / + xxx → • xxx
             line = re.sub(r"^(\s*)[-*+]\s+", r"\1• ", line)
