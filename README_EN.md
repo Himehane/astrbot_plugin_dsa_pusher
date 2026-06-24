@@ -13,20 +13,24 @@ DSA generates report
      │
      ├── Custom Webhook → Markdown
      │                       │
-     │                       ├── Text mode ── Send as whole (easy to copy/share)
+     │                       ├── Text mode ── Strip markdown syntax → push as whole
+     │                       ├── Markdown mode ── Keep MD syntax → push as whole
      │                       └── Image mode ── Single long image / Multi-image by section
      │
      └── AstrBot Sender  → HTML (with styles)
                             │
-                            ├── Text mode ── html2text → MD → push as whole
+                            ├── Text mode ── html2text → MD → strip syntax → push as whole
+                            ├── Markdown mode ── html2text → MD → push as whole
                             └── Image mode ── Extract body + plugin CSS → render image
 ```
 
 ## Features
 
 - ✅ HTTP Webhook receiver (supports both Markdown & HTML sources)
-- ✅ **Text mode** — Push full content as text, easy to copy and forward
+- ✅ **Text mode** — Auto-strip markdown syntax, easy to copy and forward
+- ✅ **Markdown mode** — Keep full MD syntax, ideal for platforms with markdown rendering
 - ✅ **Image mode** — Render as images for better mobile reading experience
+- ✅ **Table card display** — All tables converted to card format for mobile readability
 - ✅ **Optional multi-image splitting** — Off=one long image, On=split by section
 - ✅ **Multi-target push** — Send to multiple users/groups simultaneously, auto-detect platform
 - ✅ **Source-adaptive** — HTML auto-converts to Markdown, no manual config needed
@@ -60,7 +64,7 @@ Configure via AstrBot Web UI → Plugin Settings:
 |-----|-------------|---------|
 | `debug` | Debug mode: `true`=verbose logs with target IDs, `false`=warnings/errors only | `false` |
 | `target_user_ids` | Push target list (raw IDs, platform prefix auto-appended) | `[]` |
-| `output_mode` | Output mode: `text` or `image` | `text` |
+| `output_mode` | Output mode: `text` / `markdown` / `image` | `text` |
 | `split_image` | Split into multiple images by section (image mode only) | `false` |
 | `webhook_path` | Webhook path | `/stock-analysis` |
 | `webhook_port` | Listen port | `8080` |
@@ -72,7 +76,8 @@ Configure via AstrBot Web UI → Plugin Settings:
 
 | Mode | Pros | Best for |
 |------|------|----------|
-| **Text mode** | Copyable, small size, fast | Mobile reading, tech users, secondary processing |
+| **Text mode** | Clean syntax, copyable, small size | Mobile reading, tech users, secondary processing |
+| **Markdown mode** | Preserves MD syntax, supports rendering | Telegram, markdown-capable platforms |
 | **Image mode** | Beautiful layout, great reading experience | Desktop viewing, non-tech users |
 
 ### Split Image Details
@@ -96,6 +101,7 @@ In image mode:
 
 ## Version History
 
+- **v1.2.1** — Added Markdown output mode, auto-strip syntax in text mode, table card display
 - **v1.2.0** — Added chat commands (大盘任务/大盘报告/大盘复盘/自选行情/历史分析/我的自选报告), bilingual docstrings and code comments
 - **v1.1.0** — Added debug config toggle; quiet logs by default, verbose logs with target IDs in debug mode
 - **v1.0.0** — Initial release. Complete rewrite with split_image config, source-adaptive processing, multi-target push, full panel configuration
