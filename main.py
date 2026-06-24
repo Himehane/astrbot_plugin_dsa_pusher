@@ -5,6 +5,8 @@ import json
 import re
 import time
 
+from wcwidth import wcswidth
+
 from aiohttp import web
 
 from astrbot.api import logger
@@ -1001,6 +1003,7 @@ class DSAPusher(Star):
 
         in_code_block = False
         code_lines: list[str] = []
+        table_buffer: list[str] = []
 
         for line in lines:
             # 代码块 toggle
@@ -1032,6 +1035,10 @@ class DSAPusher(Star):
             # 标题: ### xxx → xxx (加空行)
             m = re.match(r"^(#{1,6})\s+(.+)$", line)
             if m:
+                # 遇到标题时先刷新表格缓冲区
+                if table_buffer:
+                    cleaned.extend(DSAPusher._format_table_block(table_buffer))
+                    table_buffer = []
                 cleaned.append("")
                 cleaned.append(m.group(2).strip())
                 cleaned.append("")
@@ -1061,18 +1068,15 @@ class DSAPusher(Star):
             line = re.sub(r"(?<!\w)\*(?!\*)(.+?)(?<!\*)\*(?!\w)", r"\1", line)
             line = re.sub(r"(?<!\w)_(.+?)_(?!\w)", r"\1", line)
 
-            # 表格处理：收集连续表格行，整体转换
+            # 表格行 → 缓冲处理（连续表格行整体格式化）
             if "|" in line and re.match(r"^\s*\|.*\|\s*$", line):
-                cells = [c.strip() for c in line.strip().strip("|").split("|")]
-                # 跳过分隔行 (如 | --- | --- |)
-                if all(re.match(r"^[-:]+$", c) for c in cells if c):
-                    continue
-                # 两列表格 → key: value（更紧凑易读）
-                if len(cells) == 2:
-                    line = f"{cells[0]}: {cells[1]}"
-                # 多列表格 → header: val1, val2, val3（紧凑排列）
-                else:
-                    line = ", ".join(cells)
+                table_buffer.append(line)
+                continue
+
+            # 非表格行 → 刷新缓冲区
+            if table_buffer:
+                cleaned.extend(DSAPusher._format_table_block(table_buffer))
+                table_buffer = []
 
             # 无序列表: - xxx / * xxx / + xxx → • xxx
             line = re.sub(r"^(\s*)[-*+]\s+", r"\1• ", line)
@@ -1082,7 +1086,81 @@ class DSAPusher(Star):
 
             cleaned.append(line)
 
+        # 刷新剩余的表格缓冲区
+        if table_buffer:
+            cleaned.extend(DSAPusher._format_table_block(table_buffer))
+
         return "\n".join(cleaned)
+
+    @staticmethod
+    def _format_table_block(table_lines: list[str]) -> list[str]:
+        """将 Markdown 表格转为微信友好的纯文本卡片格式
+        - 所有表格统一用卡片式展示
+        - 第一列作为卡片标题，其他列作为键值对列出
+        - 卡片之间用 ━━━━━ 分隔，最后一个卡片后也加分隔线
+        """
+        # 解析所有数据行
+        rows: list[list[str]] = []
+        for line in table_lines:
+            cells = [c.strip() for c in line.strip().strip("|").split("|")]
+            if all(re.match(r"^[-:]+$", c) for c in cells if c):
+                continue
+            rows.append(cells)
+
+        if not rows:
+            return []
+
+        ncols = max(len(r) for r in rows)
+        if ncols == 0:
+            return []
+
+        # 补齐列数不一致的行
+        for r in rows:
+            while len(r) < ncols:
+                r.append("")
+
+        # ---- 所有表格统一卡片式展示 ----
+        header = rows[0]
+        result: list[str] = []
+
+        for idx, row in enumerate(rows[1:]):  # 跳过表头
+            # 第一列当标题
+            title = row[0] if row[0] else f"项目{idx+1}"
+            
+            # 如果第一列是数字（排名），和第二列合并作为标题
+            # 例如: "1" + "餐饮业" → "1. 餐饮业"
+            if title.isdigit() and ncols >= 3 and row[1]:
+                title = f"{title}. {row[1]}"
+                skip_col = 2  # 跳过第二列（已合并到标题）
+            else:
+                skip_col = 1  # 从第二列开始列出
+
+            lines = [f"📋 {title}", ""]
+
+            # 其他列全部列出
+            for i in range(skip_col, ncols):
+                key = header[i] if i < len(header) else f"列{i+1}"
+                value = row[i] if i < len(row) else ""
+                if value:  # 只列出有值的列
+                    lines.append(f"{key}：{value}")
+
+            result.extend(lines)
+
+            # 每个卡片之间加分隔线
+            result.append("")
+            result.append("━━━━━━━━━━━━━━━━━━")
+            result.append("")
+
+        # 去掉最后多余的空行和分隔线
+        while result and result[-1] in ("", "━━━━━━━━━━━━━━━━━━"):
+            result.pop()
+
+        # 最后加一个分隔线作为结尾，后面加空行
+        result.append("")
+        result.append("━━━━━━━━━━━━━━━━━━")
+        result.append("")
+
+        return result
 
     @staticmethod
     def _is_html_content(content: str) -> bool:
