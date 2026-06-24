@@ -39,16 +39,16 @@ DSA generates report
 
 ## Chat Commands
 
-Send these commands directly in chat (prefixed with `大盘` to avoid conflicts with other plugins):
+Send these commands directly in chat (prefixed with `/DSA` to avoid conflicts with other plugins):
 
 | Command | Description | Example |
 |---------|-------------|---------|
-| **大盘任务** | List recent analysis tasks | `大盘任务 10` (show 10) |
-| **大盘报告 [ID]** | Pull full report for a task | `大盘报告` (latest) / `大盘报告 abc123` |
-| **大盘复盘** | Push latest market review report | `大盘复盘` |
-| **自选行情** | View real-time watchlist quotes | `自选行情` |
-| **历史分析 \<code\>** | Query stock history report | `历史分析 301491` / `历史分析 汉桑科技` |
-| **我的自选报告** | Batch push all watchlist reports | `我的自选报告` |
+| **/DSA tasks [n]** | List recent analysis tasks | `/DSA tasks 10` (show 10) |
+| **/DSA report [ID]** | Pull full report for a task | `/DSA report` (latest) / `/DSA report abc123` |
+| **/DSA review** | Push latest market review report | `/DSA review` |
+| **/DSA quotes** | View real-time watchlist quotes | `/DSA quotes` |
+| **/DSA history \<code\>** | Query individual stock history report | `/DSA history 000001` |
+| **/DSA my reports** | Batch push all watchlist reports | `/DSA my reports` |
 
 ## Installation
 
@@ -101,8 +101,9 @@ In image mode:
 
 ## Version History
 
+- **v1.2.2** — Unified command prefix to `/DSA`, fixed market review history query bug, examples use SSE Composite Index
 - **v1.2.1** — Added Markdown output mode, auto-strip syntax in text mode, table card display
-- **v1.2.0** — Added chat commands (大盘任务/大盘报告/大盘复盘/自选行情/历史分析/我的自选报告), bilingual docstrings and code comments
+- **v1.2.0** — Added chat commands (tasks/report/review/quotes/history/my reports), bilingual docstrings and code comments
 - **v1.1.0** — Added debug config toggle; quiet logs by default, verbose logs with target IDs in debug mode
 - **v1.0.0** — Initial release. Complete rewrite with split_image config, source-adaptive processing, multi-target push, full panel configuration
 

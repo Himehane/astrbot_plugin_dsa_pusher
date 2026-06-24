@@ -25,13 +25,13 @@ class DSAPusher(Star):
     DSA Pusher — 接收 DSA (Daily Stock Analysis) Webhook 推送，
     支持文字/Markdown/图片三模式、多图拆分、多目标推送、微信指令查询。
 
-    聊天指令（均以"大盘"前缀避免冲突）:
-      大盘任务 [n]       — 查询最近 n 个分析任务 (默认 5)
-      大盘报告 [ID]      — 拉取指定任务报告 (默认最新)
-      大盘复盘           — 推送最新的大盘复盘报告
-      自选行情           — 查看自选股实时行情
-      历史分析 <代码/名> — 查询个股历史分析报告
-      我的自选报告       — 批量推送所有自选股的历史报告
+    聊天指令组 /DSA:
+      /DSA 任务 [n]         — 查询最近 n 个分析任务 (默认 5)
+      /DSA 报告 [ID]        — 拉取指定任务报告 (默认最新)
+      /DSA 复盘             — 推送最新的大盘复盘报告
+      /DSA 自选股行情         — 查看自选股实时行情
+      /DSA 历史分析 <代码>  — 查询个股历史分析报告
+      /DSA 自选报告         — 批量推送所有自选股的历史报告
     """
 
     def __init__(self, context: Context, config: dict | None = None):
@@ -258,10 +258,22 @@ class DSAPusher(Star):
             logger.error(f"DSA API 请求失败 [{url}]: {e}")
             return None
 
-    # 允许兼容旧版指令前缀（$历史任务 / $拉取）
-    # 也支持不加 $ 前缀（如果 AstrBot 配置了无前缀匹配）
+    # ========================================
+    # 指令组：DSA
+    # ========================================
+    # 用法: /DSA 任务 10
+    #       /DSA 报告 abc123
+    #       /DSA 复盘
+    #       /DSA 自选股行情
+    #       /DSA 历史分析 000001
+    #       /DSA 自选报告
 
-    @filter.command("大盘任务")
+    @filter.command_group("DSA")
+    def cmd_group(self):
+        """DSA 相关指令组 / DSA-related command group"""
+        pass
+
+    @cmd_group.command("任务", aliases=["任务列表"])
     async def cmd_history_tasks(self, event: AstrMessageEvent):
         """
         查询最近分析任务列表 / Query recent analysis task list
@@ -313,13 +325,13 @@ class DSAPusher(Star):
         lines.append("   输入「大盘报告」拉取最新报告")
         yield event.plain_result("\n".join(lines))
 
-    @filter.command("自选行情")
+    @cmd_group.command("自选股行情")
     async def cmd_watchlist(self, event: AstrMessageEvent):
         """
         查询自选股实时行情 / Query watchlist real-time quotes
 
         遍历用户自选股，逐只拉取实时行情（价格、涨跌幅、最高/最低、成交量）。
-        用法: 自选行情
+        用法: 自选股行情
 
         Parameters:
             event (AstrMessageEvent): 用户聊天消息
@@ -383,15 +395,15 @@ class DSAPusher(Star):
         lines.append("💡 输入「大盘报告」拉取最新分析报告")
         yield event.plain_result("\n".join(lines))
 
-    @filter.command("历史分析")
+    @cmd_group.command("历史分析")
     async def cmd_history_stock(self, event: AstrMessageEvent):
         """
         查询个股历史分析报告 / Query individual stock history report
 
         从历史记录中找到该股票最新的分析报告，通过 Markdown API 获取全文并推送。
-        支持股票代码或名称匹配（如 "301491" 或 "汉桑科技"）。
+        支持股票代码或名称匹配（如 "000001" 或 "上证指数"）。
 
-        用法: 历史分析 <股票代码或名称>  例: 历史分析 301491
+        用法: 历史分析 <股票代码或名称>  例: 历史分析 000001
 
         Parameters:
             event (AstrMessageEvent): 用户聊天消息
@@ -402,7 +414,7 @@ class DSAPusher(Star):
         parts = text.split(None, 1)
         if len(parts) < 2:
             yield event.plain_result(
-                "❌ 用法：历史分析 <股票代码或名称>\n例：历史分析 301491"
+                "❌ 用法：历史分析 <股票代码或名称>\n例：历史分析 000001"
             )
             return
 
@@ -415,7 +427,7 @@ class DSAPusher(Star):
             yield event.plain_result("❌ 获取历史个股列表失败")
             return
 
-        # 匹配股票：先按代码精确匹配，再按名称匹配
+        # 匹配股票：先按股票代码精确匹配，再按中文名称匹配
         matched = None
         for item in data["items"]:
             if item["stock_code"] == keyword:
@@ -455,13 +467,13 @@ class DSAPusher(Star):
         else:
             await self._process_image_mode(content)
 
-    @filter.command("我的自选报告")
+    @cmd_group.command("自选报告", aliases=["我的自选报告"])
     async def cmd_watchlist_history(self, event: AstrMessageEvent):
         """
         批量推送所有自选股历史报告 / Batch push watchlist history reports
 
         遍历自选股列表，逐只查找最新分析报告并通过 Markdown API 获取全文推送。
-        进度会实时反馈（如 [1/4] 正在获取华孚时尚报告...）。
+        进度会实时反馈（如 [1/4] 正在获取上证指数报告...）。
 
         用法: 我的自选报告
 
@@ -525,7 +537,7 @@ class DSAPusher(Star):
             f"✅ 完成！已推送 {pushed}/{total} 只自选股的历史分析报告"
         )
 
-    @filter.command("大盘复盘")
+    @cmd_group.command("复盘")
     async def cmd_market_review(self, event: AstrMessageEvent):
         """
         推送最新大盘复盘报告 / Push latest market review report
@@ -549,11 +561,11 @@ class DSAPusher(Star):
             yield event.plain_result("❌ 获取历史记录失败")
             return
 
-        # history 返回列表，找到第一个 report_type=market_review 的记录
+        # history 返回 {total, page, limit, items: [...]} 结构
         records = (
             data
             if isinstance(data, list)
-            else data.get("history", data.get("records", []))
+            else data.get("items", data.get("history", data.get("records", [])))
         )
         target = None
         for r in records:
@@ -587,7 +599,7 @@ class DSAPusher(Star):
         else:
             await self._process_image_mode(content)
 
-    @filter.command("大盘报告")
+    @cmd_group.command("报告", aliases=["拉取"])
     async def cmd_pull_report(self, event: AstrMessageEvent):
         """
         拉取指定任务报告并推送 / Pull and push a specific task report
@@ -1284,9 +1296,9 @@ def _pipe_table_to_html(table_lines: list[str]) -> str:
     将管道符表格行转换为 HTML 表格字符串。
 
     输入示例:
-      | 分类 | 品种 |
+      | 指数 | 点位 |
       |---|---|
-      | 股票 | 茅台 |
+      | 上证指数 | 3500 |
     输出: <table><tr><td>...</td></tr></table>
     """
     rows = []
