@@ -994,9 +994,9 @@ class DSAPusher(Star):
         """
         if not content:
             return ""
+        lines = content.split("\n")
 
-        lines = content.split("
-")
+
         cleaned: list[str] = []
 
         in_code_block = False
@@ -1008,8 +1008,7 @@ class DSAPusher(Star):
                 if in_code_block:
                     # 结束代码块：输出收集的代码内容
                     if code_lines:
-                        cleaned.append("
-".join(code_lines))
+                        cleaned.append("\n".join(code_lines))
                         code_lines = []
                     in_code_block = False
                 else:
@@ -1078,8 +1077,7 @@ class DSAPusher(Star):
 
             cleaned.append(line)
 
-        return "
-".join(cleaned)
+        return "\n".join(cleaned)
 
     @staticmethod
     def _is_html_content(content: str) -> bool:
