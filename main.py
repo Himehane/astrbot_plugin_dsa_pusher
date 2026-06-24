@@ -8,6 +8,7 @@ import time
 from aiohttp import web
 
 from astrbot.api import logger
+from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.message_components import Image, Plain
 from astrbot.api.star import Context, Star, register
 from astrbot.core.message.message_event_result import MessageChain
@@ -17,18 +18,29 @@ from astrbot.core.message.message_event_result import MessageChain
     "astrbot_plugin_dsa_pusher",
     "Himehane",
     "DSA推送器 - 接收股票分析报告并推送到聊天平台",
-    "v1.1.0",
+    "v1.2.0",
 )
 class DSAPusher(Star):
     """
-    接收 DSA (Daily Stock Analysis) Webhook 推送，
-    支持文字/图片双模式，按需拆分多图，自动推送多目标。
+    DSA Pusher — 接收 DSA (Daily Stock Analysis) Webhook 推送，
+    支持文字/图片双模式、多图拆分、多目标推送、微信指令查询。
+
+    聊天指令（均以"大盘"前缀避免冲突）:
+      大盘任务 [n]       — 查询最近 n 个分析任务 (默认 5)
+      大盘报告 [ID]      — 拉取指定任务报告 (默认最新)
+      大盘复盘           — 推送最新的大盘复盘报告
+      自选行情           — 查看自选股实时行情
+      历史分析 <代码/名> — 查询个股历史分析报告
+      我的自选报告       — 批量推送所有自选股的历史报告
     """
 
-    def __init__(self, context: Context, config: dict):
+    def __init__(self, context: Context, config: dict | None = None):
+        config = config or {}
         super().__init__(context)
         self.webhook_port = int(config.get("webhook_port", 8080))
         self.webhook_path = config.get("webhook_path", "/stock-analysis")
+        # DSA API 地址（通过 webui 端口访问）
+        self.dsa_api_base = config.get("dsa_api_base", "http://127.0.0.1:19000")
         self.secret_key = config.get("secret_key")
         self.enable_signature_verification = False  # 强制关闭签名验证
         self.image_quality = int(config.get("image_quality", 85))
@@ -183,14 +195,15 @@ class DSAPusher(Star):
 
     def _detect_platform(self) -> str | None:
         """
-        自动检测第一个支持主动推送的已连接平台。
-        返回平台 ID (如 'wechatcom_official')，或 None。
+        Auto-detect the first connected platform that supports active push.
+        Returns platform ID (e.g. 'wechatcom_official'), or None.
         """
+        # 遍历 AstrBot 已连接平台实例，跳过 web/cli 等管理端
         if self._cached_platform:
             return self._cached_platform
         try:
-            for inst in self.context.get_registered_instances():
-                pid = getattr(inst, "platform_meta", {}).get("platform", "")
+            for inst in self.context.platform_manager.platform_insts:
+                pid = inst.meta().id
                 if pid and pid not in ("web", "cli"):
                     self._cached_platform = pid
                     if self.debug:
@@ -222,6 +235,394 @@ class DSAPusher(Star):
                 # 默认使用 "FriendMessage" 类型
                 result.append(f"{platform}:FriendMessage:{uid}")
         return result
+
+    # ================================================================
+    #  DSA API 交互 (历史报告查询)
+    # ================================================================
+
+    async def _api_get(self, path: str, timeout: int = 10) -> dict | None:
+        """向 DSA API 发送 GET 请求"""
+        import aiohttp
+
+        url = f"{self.dsa_api_base.rstrip('/')}/{path.lstrip('/')}"
+        try:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as session:
+                async with session.get(url) as resp:
+                    if resp.status != 200:
+                        logger.warning(
+                            f"DSA API 返回 {resp.status}: {url}"
+                        )
+                        return None
+                    return await resp.json()
+        except Exception as e:
+            logger.error(f"DSA API 请求失败 [{url}]: {e}")
+            return None
+
+    # 允许兼容旧版指令前缀（$历史任务 / $拉取）
+    # 也支持不加 $ 前缀（如果 AstrBot 配置了无前缀匹配）
+
+    @filter.command("大盘任务")
+    async def cmd_history_tasks(self, event: AstrMessageEvent):
+        """
+        查询最近分析任务列表 / Query recent analysis task list
+
+        可选数字参数控制显示条数，默认最近 5 条。
+        用法: 大盘任务 [数字]  例: 大盘任务 10
+
+        Parameters:
+            event (AstrMessageEvent): 用户聊天消息
+        Yields:
+            plain_result: 格式化任务列表
+        """
+        # 解析可选参数 n，从消息中提取数字，限制 1~20 条
+        text = event.get_message_str().strip()
+        n = 5  # 默认
+        import re as _re
+        m = _re.search(r"(\d+)", text)
+        if m:
+            n = int(m.group(1))
+            n = max(1, min(n, 20))  # 限制范围 1~20
+
+        data = await self._api_get("api/v1/analysis/tasks")
+        if not data:
+            yield event.plain_result("❌ 无法连接 DSA 服务，请检查 API 地址配置")
+            return
+
+        tasks = data.get("tasks", [])
+        if not tasks:
+            yield event.plain_result("📋 暂无历史任务记录")
+            return
+
+        tasks = tasks[:n]
+        lines = [f"📋 共 {data.get('total', 0)} 个任务，最近 {len(tasks)} 个："]
+        for t in tasks:
+            name = t.get("stock_name") or t.get("stock_code", "未知")
+            tid = t.get("task_id", "???")
+            status = t.get("status", "未知")
+            created = (t.get("created_at") or "??")[:16].replace("T", " ")
+            completed = (t.get("completed_at") or "进行中")[:16].replace("T", " ")
+            lines.append(f"  📌 {name}")
+            lines.append(f"     ID：{tid}")
+            lines.append(f"     创建：{created}")
+            lines.append(f"     完成：{completed}")
+            lines.append(f"     状态：{status}")
+            lines.append("")
+
+        lines.append("💡 输入「大盘报告 <ID>」拉取指定报告")
+        lines.append("   输入「大盘报告」拉取最新报告")
+        yield event.plain_result("\n".join(lines))
+
+    @filter.command("自选行情")
+    async def cmd_watchlist(self, event: AstrMessageEvent):
+        """
+        查询自选股实时行情 / Query watchlist real-time quotes
+
+        遍历用户自选股，逐只拉取实时行情（价格、涨跌幅、最高/最低、成交量）。
+        用法: 自选行情
+
+        Parameters:
+            event (AstrMessageEvent): 用户聊天消息
+        Yields:
+            plain_result: 格式化行情列表文本
+        """
+        # Step 1: 获取自选列表（仅股票代码）
+        data = await self._api_get("api/v1/stocks/watchlist")
+        if not data or "stock_codes" not in data:
+            yield event.plain_result("❌ 获取自选列表失败")
+            return
+
+        codes = data["stock_codes"]
+        if not codes:
+            yield event.plain_result("📭 自选列表为空")
+            return
+
+        lines = []
+        lines.append(f"📋 自选股行情 ({len(codes)}只)")
+        lines.append(f"📅 {data.get('message', '')}")
+        lines.append("")
+
+        up = "🔴"
+        down = "🟢"
+        flat = "⚪"
+
+        for code in codes:
+            quote = await self._api_get(f"api/v1/stocks/{code}/quote")
+            if not quote:
+                lines.append(f"  {code} — 获取行情失败")
+                continue
+
+            name = quote.get("stock_name", "")
+            price = quote.get("current_price", 0)
+            change = quote.get("change", 0)
+            pct = quote.get("change_percent", 0)
+            high = quote.get("high", 0)
+            low = quote.get("low", 0)
+            vol = quote.get("volume", 0)
+
+            if pct > 0:
+                arrow = up
+                sign = "+"
+            elif pct < 0:
+                arrow = down
+                sign = ""
+            else:
+                arrow = flat
+                sign = ""
+
+            if vol >= 10000:
+                vol_str = f"{vol/10000:.1f}万手"
+            else:
+                vol_str = f"{vol:.0f}手"
+
+            lines.append(f"{arrow} **{name}** ({code})")
+            lines.append(f"  现价 {price:.2f}  {sign}{change:.2f} ({sign}{pct:.2f}%)")
+            lines.append(f"  高 {high:.2f}  低 {low:.2f}  量 {vol_str}")
+            lines.append("")
+
+        lines.append("💡 输入「大盘报告」拉取最新分析报告")
+        yield event.plain_result("\n".join(lines))
+
+    @filter.command("历史分析")
+    async def cmd_history_stock(self, event: AstrMessageEvent):
+        """
+        查询个股历史分析报告 / Query individual stock history report
+
+        从历史记录中找到该股票最新的分析报告，通过 Markdown API 获取全文并推送。
+        支持股票代码或名称匹配（如 "301491" 或 "汉桑科技"）。
+
+        用法: 历史分析 <股票代码或名称>  例: 历史分析 301491
+
+        Parameters:
+            event (AstrMessageEvent): 用户聊天消息
+        Yields:
+            plain_result: 状态提示（查找中 / 推送中）
+        """
+        text = event.get_message_str().strip()
+        parts = text.split(None, 1)
+        if len(parts) < 2:
+            yield event.plain_result("❌ 用法：历史分析 <股票代码或名称>\n例：历史分析 301491")
+            return
+
+        keyword = parts[1].strip()
+
+        # Step 1: 获取历史股票列表（含最新记录 ID）
+        # Step 2: 先按股票代码精确匹配，再按中文名称匹配
+        data = await self._api_get("api/v1/history/stocks")
+        if not data or "items" not in data:
+            yield event.plain_result("❌ 获取历史个股列表失败")
+            return
+
+        # 匹配股票：先按代码精确匹配，再按名称匹配
+        matched = None
+        for item in data["items"]:
+            if item["stock_code"] == keyword:
+                matched = item
+                break
+
+        if not matched:
+            for item in data["items"]:
+                if item["stock_name"] == keyword:
+                    matched = item
+                    break
+
+        if not matched:
+            yield event.plain_result(f"❌ 未找到「{keyword}」的历史分析记录\n该股可能还未被分析过")
+            return
+
+        stock_display = f"{matched['stock_name']}({matched['stock_code']})"
+        yield event.plain_result(f"⏳ 正在获取 {stock_display} 最新报告...")
+
+        # 获取报告 Markdown
+        record_id = matched["id"]
+        report_data = await self._api_get(f"api/v1/history/{record_id}/markdown")
+        if not report_data or "content" not in report_data:
+            yield event.plain_result(f"❌ 获取 {stock_display} 报告失败")
+            return
+
+        content = report_data["content"]
+        yield event.plain_result(f"✅ 已获取，正在推送...")
+
+        # 走现有推送逻辑
+        if self.output_mode == "text":
+            await self._process_text_mode(content)
+        else:
+            await self._process_image_mode(content)
+
+    @filter.command("我的自选报告")
+    async def cmd_watchlist_history(self, event: AstrMessageEvent):
+        """
+        批量推送所有自选股历史报告 / Batch push watchlist history reports
+
+        遍历自选股列表，逐只查找最新分析报告并通过 Markdown API 获取全文推送。
+        进度会实时反馈（如 [1/4] 正在获取华孚时尚报告...）。
+
+        用法: 我的自选报告
+
+        Parameters:
+            event (AstrMessageEvent): 用户聊天消息
+        Yields:
+            plain_result: 逐条进度提示 + 推送完成汇总
+        """
+        # Step 1: 获取自选列表（仅股票代码）
+        # Step 2: 获取历史股票索引，建立 code -> 记录 映射
+        wl = await self._api_get("api/v1/stocks/watchlist")
+        if not wl or "stock_codes" not in wl:
+            yield event.plain_result("❌ 获取自选列表失败")
+            return
+
+        codes = wl["stock_codes"]
+        if not codes:
+            yield event.plain_result("📭 自选列表为空")
+            return
+
+        # 获取历史个股列表，建立 code -> item 映射
+        hs = await self._api_get("api/v1/history/stocks")
+        stock_map = {}
+        if hs and "items" in hs:
+            for item in hs["items"]:
+                stock_map[item["stock_code"]] = item
+
+        total = len(codes)
+        yield event.plain_result(f"📋 准备推送 {total} 只自选股的历史分析报告...")
+
+        pushed = 0
+        for i, code in enumerate(codes, 1):
+            if code not in stock_map:
+                continue
+
+            item = stock_map[code]
+            stock_name = item["stock_name"]
+            record_id = item["id"]
+
+            yield event.plain_result(f"[{i}/{total}] ⏳ 正在获取 {stock_name}({code}) 报告...")
+
+            report_data = await self._api_get(f"api/v1/history/{record_id}/markdown")
+            if not report_data or "content" not in report_data:
+                continue
+
+            content = report_data["content"]
+
+            # 报告自带标题，直接推送即可
+            if self.output_mode == "text":
+                await self._process_text_mode(content)
+            else:
+                await self._process_image_mode(content)
+
+            pushed += 1
+
+        yield event.plain_result(f"✅ 完成！已推送 {pushed}/{total} 只自选股的历史分析报告")
+
+    @filter.command("大盘复盘")
+    async def cmd_market_review(self, event: AstrMessageEvent):
+        """
+        推送最新大盘复盘报告 / Push latest market review report
+
+        在历史分析记录中查找 stock_code="MARKET" 且 report_type="market_review"
+        的最新记录，获取其 Markdown 全文并推送。无需参数。
+
+        用法: 大盘复盘
+
+        Parameters:
+            event (AstrMessageEvent): 用户聊天消息
+        Yields:
+            plain_result: 状态提示（查找中 / 推送中）
+        """
+        yield event.plain_result("⏳ 正在查找最新大盘复盘报告...")
+
+        # 获取最近 20 条历史记录，按 ID 倒序（最新在前）
+        # 找到第一条 stock_code=MARKET 且 report_type=market_review 的记录
+        data = await self._api_get("api/v1/history?limit=20")
+        if not data:
+            yield event.plain_result("❌ 获取历史记录失败")
+            return
+
+        # history 返回列表，找到第一个 report_type=market_review 的记录
+        records = data if isinstance(data, list) else data.get("history", data.get("records", []))
+        target = None
+        for r in records:
+            if r.get("stock_code") == "MARKET" and r.get("report_type") == "market_review":
+                target = r
+                break
+
+        if not target:
+            yield event.plain_result("❌ 未找到大盘复盘记录")
+            return
+
+        record_id = target["id"]
+        stock_name = target.get("stock_name", "大盘复盘")
+        yield event.plain_result(f"✅ 找到 {stock_name}，正在获取报告...")
+
+        md_data = await self._api_get(f"api/v1/history/{record_id}/markdown")
+        if not md_data or "content" not in md_data:
+            yield event.plain_result("❌ 获取报告内容失败")
+            return
+
+        content = md_data["content"]
+        yield event.plain_result(f"✅ 正在推送...")
+
+        if self.output_mode == "text":
+            await self._process_text_mode(content)
+        else:
+            await self._process_image_mode(content)
+
+    @filter.command("大盘报告")
+    async def cmd_pull_report(self, event: AstrMessageEvent):
+        """
+        拉取指定任务报告并推送 / Pull and push a specific task report
+
+        通过任务 ID 查询分析状态接口并获取报告全文。
+        不传 ID 时自动拉取最新任务；传 ID 时拉取指定任务。
+
+        大盘复盘走 market_review_report 字段，个股走 result.report 字段。
+        用法: 大盘报告        (最新任务)
+             大盘报告 <ID>    (指定任务)
+
+        Parameters:
+            event (AstrMessageEvent): 用户聊天消息
+        Yields:
+            plain_result: 状态提示（拉取中 / 推送中）
+        """
+        text = event.get_message_str().strip()
+        # 提取 ID 参数：不传则默认 "last"，传则用指定 ID
+        parts = text.split(None, 1)
+        task_id = "last"
+        if len(parts) > 1:
+            task_id = parts[1].strip()
+
+        if task_id == "last":
+            # 获取最新任务
+            data = await self._api_get("api/v1/analysis/tasks")
+            if not data or not data.get("tasks"):
+                yield event.plain_result("❌ 暂无历史任务")
+                return
+            task_id = data["tasks"][0]["task_id"]
+            yield event.plain_result(f"⏳ 正在拉取最新报告...")
+
+        # 拉取报告
+        data = await self._api_get(f"api/v1/analysis/status/{task_id}")
+        if not data:
+            yield event.plain_result(f"❌ 未找到任务 {task_id[:16]}...")
+            return
+
+        # 获取报告内容：大盘复盘走 market_review_report，个股走 result
+        report = data.get("market_review_report")
+        if not report:
+            # 尝试取个股报告
+            result = data.get("result")
+            if result and isinstance(result, dict):
+                report = result.get("report") or result.get("markdown")
+        if not report:
+            yield event.plain_result(f"⚠️ 任务 {data.get('stock_name', '')} 暂无报告内容")
+            return
+
+        yield event.plain_result(f"✅ 已获取报告，正在推送...")
+
+        # 走现有的推送逻辑
+        content = self._normalize_content(report)
+        if self.output_mode == "text":
+            await self._process_text_mode(content)
+        else:
+            await self._process_image_mode(content)
 
     # ================================================================
     #  入口：处理股票分析数据
@@ -489,7 +890,7 @@ class DSAPusher(Star):
                     if text:
                         await self.context.send_message(
                             target_id,
-                            MessageChain().message([Plain(text)]),
+                            MessageChain().message(text),
                         )
                 else:
                     # 图片模式：逐张发送
