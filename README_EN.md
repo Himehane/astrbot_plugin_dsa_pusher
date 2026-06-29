@@ -35,7 +35,7 @@ DSA generates report
 - ✅ **Multi-target push** — Send to multiple users/groups simultaneously, auto-detect platform
 - ✅ **Source-adaptive** — HTML auto-converts to Markdown, no manual config needed
 - ✅ **Full panel configuration** — All settings via Web UI, no restart required
-- ✅ **Chat commands** — Query quotes, reports, and market reviews directly from chat
+- ✅ **Chat commands** — Query quotes, reports, market reviews, manage watchlist, toggle push notification
 
 ## Chat Commands
 
@@ -50,6 +50,12 @@ Send these commands directly in chat (prefixed with `/DSA` to avoid conflicts wi
 | **/DSA quotes** | View real-time watchlist quotes | `/DSA quotes` |
 | **/DSA history \<code\>** | Query individual stock history report | `/DSA history 000001` |
 | **/DSA my reports** | Batch push all watchlist reports | `/DSA my reports` |
+| **/DSA my watchlist** | View current watchlist | `/DSA my watchlist` |
+| **/DSA add \<code\>** | Add stock to watchlist | `/DSA add 600519` |
+| **/DSA remove \<code\>** | Remove stock from watchlist | `/DSA remove 600519` |
+| **/DSA enable push** | Enable auto push notification | `/DSA enable push` |
+| **/DSA disable push** | Disable auto push notification | `/DSA disable push` |
+| **/DSA push status** | Check push notification status | `/DSA push status` |
 
 ## Installation
 
@@ -102,7 +108,7 @@ In image mode:
 
 ## Version History
 
-- **v1.3.0** — Added `/DSA help` command (aliases: `h`/`help`), lists all available commands with descriptions by category
+- **v1.3.0** — Added `/DSA help` command (aliases: `h`/`help`), lists all available commands with descriptions by category; added missing watchlist commands (my watchlist/add/remove) and push control commands (enable/disable/push status)
 - **v1.2.2** — Unified command prefix to `/DSA`, fixed market review history query bug, examples use SSE Composite Index
 - **v1.2.1** — Added Markdown output mode, auto-strip syntax in text mode, table card display
 - **v1.2.0** — Added chat commands (tasks/report/review/quotes/history/my reports), bilingual docstrings and code comments
