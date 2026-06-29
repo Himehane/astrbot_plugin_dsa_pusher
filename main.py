@@ -18,7 +18,7 @@ from astrbot.core.message.message_event_result import MessageChain
     "astrbot_plugin_dsa_pusher",
     "Himehane",
     "DSA推送器 - 接收股票分析报告并推送到聊天平台",
-    "v1.2.0",
+    "v1.3.0",
 )
 class DSAPusher(Star):
     """
@@ -30,8 +30,12 @@ class DSAPusher(Star):
       /DSA 报告 [ID]        — 拉取指定任务报告 (默认最新)
       /DSA 复盘             — 推送最新的大盘复盘报告
       /DSA 自选股行情         — 查看自选股实时行情
+      /DSA 帮助             — 显示所有命令帮助
       /DSA 历史分析 <代码>  — 查询个股历史分析报告
       /DSA 自选报告         — 批量推送所有自选股的历史报告
+      /DSA 开启推送         — 开启自动推送通知
+      /DSA 关闭推送         — 关闭自动推送通知
+      /DSA 推送状态         — 查询推送通知开关状态
     """
 
     def __init__(self, context: Context, config: dict | None = None):
@@ -66,6 +70,12 @@ class DSAPusher(Star):
             self.debug = _debug_val.lower() in ("true", "1", "yes")
         else:
             self.debug = bool(_debug_val)
+        # 推送通知开关：默认为 true，可通过命令切换
+        _push_val = config.get("enable_push_notification", True)
+        if isinstance(_push_val, str):
+            self.enable_push_notification = _push_val.lower() in ("true", "1", "yes")
+        else:
+            self.enable_push_notification = bool(_push_val)
 
         # 记录已缓存的平台标识和上下文
         self._cached_platform = None
@@ -273,6 +283,35 @@ class DSAPusher(Star):
         """DSA 相关指令组 / DSA-related command group"""
         pass
 
+    @cmd_group.command("帮助", aliases=["h", "help"])
+    async def cmd_help(self, event: AstrMessageEvent):
+        """
+        显示所有 DSA 命令 / Show all DSA commands
+        """
+        help_text = """📊 DSA 每日股票分析 - 命令帮助
+
+【自选股管理】
+• /DSA 我的自选          — 查看自选股列表
+• /DSA 增加自选 <代码>   — 添加股票到自选
+• /DSA 删除自选 <代码>   — 从自选移除股票
+• /DSA 自选股行情        — 查看自选股实时行情
+
+【分析报告】
+• /DSA 报告 <代码>       — 拉取指定股票最新报告
+• /DSA 自选报告          — 拉取所有自选股最新报告
+• /DSA 复盘              — 拉取大盘复盘报告
+• /DSA 历史分析 <代码>   — 查询历史分析记录
+• /DSA 任务              — 查看最近分析任务
+
+【推送控制】
+• /DSA 开启推送          — 开启自动推送通知
+• /DSA 关闭推送          — 关闭自动推送通知
+• /DSA 推送状态          — 查看推送开关状态
+
+【其他】
+• /DSA 帮助              — 显示本帮助"""
+        yield event.plain_result(help_text)
+
     @cmd_group.command("任务", aliases=["任务列表"])
     async def cmd_history_tasks(self, event: AstrMessageEvent):
         """
@@ -321,8 +360,8 @@ class DSAPusher(Star):
             lines.append(f"     状态：{status}")
             lines.append("")
 
-        lines.append("💡 输入「大盘报告 <ID>」拉取指定报告")
-        lines.append("   输入「大盘报告」拉取最新报告")
+        lines.append("💡 输入 /DSA 报告 <ID> 拉取指定报告")
+        lines.append("   输入 /DSA 报告 拉取最新报告")
         yield event.plain_result("\n".join(lines))
 
     @cmd_group.command("自选股行情")
@@ -392,7 +431,7 @@ class DSAPusher(Star):
             lines.append(f"  高 {high:.2f}  低 {low:.2f}  量 {vol_str}")
             lines.append("")
 
-        lines.append("💡 输入「大盘报告」拉取最新分析报告")
+        lines.append("💡 输入 /DSA 报告 拉取最新分析报告")
         yield event.plain_result("\n".join(lines))
 
     @cmd_group.command("历史分析")
@@ -414,7 +453,7 @@ class DSAPusher(Star):
         parts = text.split(None, 1)
         if len(parts) < 2:
             yield event.plain_result(
-                "❌ 用法：历史分析 <股票代码或名称>\n例：历史分析 000001"
+                "❌ 用法：/DSA 历史分析 <股票代码或名称>\n例：/DSA 历史分析 000001"
             )
             return
 
@@ -536,6 +575,184 @@ class DSAPusher(Star):
         yield event.plain_result(
             f"✅ 完成！已推送 {pushed}/{total} 只自选股的历史分析报告"
         )
+
+
+    @cmd_group.command("我的自选", aliases=["自选列表"])
+    async def cmd_my_watchlist(self, event: AstrMessageEvent):
+        """
+        查看自选股列表 / View watchlist
+        """
+        data = await self._api_get("api/v1/stocks/watchlist")
+        if not data or "stock_codes" not in data:
+            yield event.plain_result("❌ 获取自选列表失败")
+            return
+
+        codes = data["stock_codes"]
+        if not codes:
+            msg = "📭 自选列表为空\n\n💡 输入 /DSA 增加自选 <股票代码> 添加自选股"
+            yield event.plain_result(msg)
+            return
+
+        lines = [f"📋 我的自选股 ({len(codes)}只)", ""]
+
+        for i, code in enumerate(codes, 1):
+            quote = await self._api_get(f"api/v1/stocks/{code}/quote")
+            if quote and "stock_name" in quote:
+                name = quote["stock_name"]
+                lines.append(f"  {i}. {name} ({code})")
+            else:
+                lines.append(f"  {i}. {code}")
+
+        lines.append("")
+        lines.append("💡 增加: /DSA 增加自选 <代码>")
+        lines.append("💡 删除: /DSA 删除自选 <代码>")
+        lines.append("💡 行情: /DSA 自选股行情")
+        yield event.plain_result("\n".join(lines))
+
+    @cmd_group.command("增加自选", aliases=["添加自选"])
+    async def cmd_add_watchlist(self, event: AstrMessageEvent):
+        """
+        添加自选股 / Add stock to watchlist
+        """
+        text = event.get_message_str().strip()
+        parts = text.split(None, 1)
+        if len(parts) < 2:
+            yield event.plain_result("❌ 用法：/DSA 增加自选 <股票代码>\n例：/DSA 增加自选 600519")
+            return
+
+        code = parts[1].strip()
+        if not re.match(r"^\d{6}$", code):
+            yield event.plain_result(f"❌ 股票代码格式错误：{code}\n请输入6位数字代码")
+            return
+
+        wl = await self._api_get("api/v1/stocks/watchlist")
+        if wl and "stock_codes" in wl:
+            if code in wl["stock_codes"]:
+                yield event.plain_result(f"⚠️ {code} 已在自选列表中")
+                return
+
+        import aiohttp
+        url = f"{self.dsa_api_base.rstrip('/')}/api/v1/stocks/watchlist/add"
+        try:
+            async with aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=10)
+            ) as session:
+                async with session.post(url, json={"stock_code": code}) as resp:
+                    if resp.status != 200:
+                        error = await resp.json()
+                        yield event.plain_result(f"❌ 添加失败: {error.get('detail', '未知错误')}")
+                        return
+                    result = await resp.json()
+        except Exception as e:
+            yield event.plain_result(f"❌ 添加失败: {e}")
+            return
+
+        stock_name = code
+        quote = await self._api_get(f"api/v1/stocks/{code}/quote")
+        if quote and "stock_name" in quote:
+            stock_name = f"{quote['stock_name']}({code})"
+
+        yield event.plain_result(f"✅ 已添加 {stock_name} 到自选列表\n\n当前自选 {len(result.get('stock_codes', []))} 只股票")
+
+    @cmd_group.command("删除自选", aliases=["移除自选"])
+    async def cmd_remove_watchlist(self, event: AstrMessageEvent):
+        """
+        删除自选股 / Remove stock from watchlist
+        """
+        text = event.get_message_str().strip()
+        parts = text.split(None, 1)
+        if len(parts) < 2:
+            yield event.plain_result("❌ 用法：/DSA 删除自选 <股票代码>\n例：/DSA 删除自选 600519")
+            return
+
+        code = parts[1].strip()
+        if not re.match(r"^\d{6}$", code):
+            yield event.plain_result(f"❌ 股票代码格式错误：{code}\n请输入6位数字代码")
+            return
+
+        wl = await self._api_get("api/v1/stocks/watchlist")
+        if wl and "stock_codes" in wl:
+            if code not in wl["stock_codes"]:
+                yield event.plain_result(f"⚠️ {code} 不在自选列表中")
+                return
+        else:
+            yield event.plain_result("❌ 获取自选列表失败")
+            return
+
+        import aiohttp
+        url = f"{self.dsa_api_base.rstrip('/')}/api/v1/stocks/watchlist/remove"
+        try:
+            async with aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=10)
+            ) as session:
+                async with session.post(url, json={"stock_code": code}) as resp:
+                    if resp.status != 200:
+                        error = await resp.json()
+                        yield event.plain_result(f"❌ 删除失败: {error.get('detail', '未知错误')}")
+                        return
+                    result = await resp.json()
+        except Exception as e:
+            yield event.plain_result(f"❌ 删除失败: {e}")
+            return
+
+        yield event.plain_result(f"✅ 已从自选列表中移除 {code}\n\n当前自选 {len(result.get('stock_codes', []))} 只股票")
+
+
+    @cmd_group.command("开启推送", aliases=["开启通知"])
+    async def cmd_enable_push(self, event: AstrMessageEvent):
+        """
+        开启 DSA 推送通知 / Enable DSA push notifications
+        """
+        self.enable_push_notification = True
+        self._save_config()
+        yield event.plain_result("✅ 已开启 DSA 推送通知\n\n分析报告将自动推送到配置的目标")
+
+    @cmd_group.command("关闭推送", aliases=["关闭通知"])
+    async def cmd_disable_push(self, event: AstrMessageEvent):
+        """
+        关闭 DSA 推送通知 / Disable DSA push notifications
+        """
+        self.enable_push_notification = False
+        self._save_config()
+        yield event.plain_result("✅ 已关闭 DSA 推送通知\n\n分析报告将不再自动推送，但仍可通过指令手动查询")
+
+
+    @cmd_group.command("推送状态", aliases=["查询推送"])
+    async def cmd_push_status(self, event: AstrMessageEvent):
+        """
+        查询 DSA 推送通知状态 / Check DSA push notification status
+        """
+        status = "✅ 开启" if self.enable_push_notification else "❌ 关闭"
+        yield event.plain_result(f"📢 推送通知状态: {status}\n\n"
+                                  f"配置值: enable_push_notification = {self.enable_push_notification}")
+
+    def _save_config(self):
+        """保存推送通知开关状态到配置文件"""
+        try:
+            import json
+            # AstrBot 实际加载的配置文件路径
+            config_path = "/AstrBot/data/config/astrbot_plugin_dsa_pusher_config.json"
+            # 读取现有配置
+            try:
+                with open(config_path, encoding="utf-8") as f:
+                    content = f.read()
+                    # 处理 BOM 头
+                    if content.startswith("\ufeff"):
+                        content = content[1:]
+                    config = json.loads(content)
+            except (FileNotFoundError, json.JSONDecodeError):
+                config = {}
+
+            # 更新配置
+            config["enable_push_notification"] = self.enable_push_notification
+
+            # 写回文件
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(config, f, ensure_ascii=False, indent=2)
+
+            logger.info(f"推送通知开关已保存: {self.enable_push_notification}")
+        except Exception as e:
+            logger.error(f"保存配置失败: {e}")
 
     @cmd_group.command("复盘")
     async def cmd_market_review(self, event: AstrMessageEvent):
@@ -929,6 +1146,11 @@ class DSAPusher(Star):
 
     async def _send_to_targets(self, chunks: list, mode: str = "text"):
         """发送内容到目标群组和用户(文字/图片通用)"""
+        if not self.enable_push_notification:
+            if self.debug:
+                logger.info("每日股票分析适配器: 推送通知已关闭，跳过发送")
+            return
+
         target_ids = self._construct_target_ids()
         if not target_ids:
             logger.warning("每日股票分析适配器: 没有配置推送目标")

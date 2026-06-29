@@ -43,6 +43,7 @@ Send these commands directly in chat (prefixed with `/DSA` to avoid conflicts wi
 
 | Command | Description | Example |
 |---------|-------------|---------|
+| **/DSA help** | Show all available commands | `/DSA help` or `/DSA h` |
 | **/DSA tasks [n]** | List recent analysis tasks | `/DSA tasks 10` (show 10) |
 | **/DSA report [ID]** | Pull full report for a task | `/DSA report` (latest) / `/DSA report abc123` |
 | **/DSA review** | Push latest market review report | `/DSA review` |
@@ -101,6 +102,7 @@ In image mode:
 
 ## Version History
 
+- **v1.3.0** — Added `/DSA help` command (aliases: `h`/`help`), lists all available commands with descriptions by category
 - **v1.2.2** — Unified command prefix to `/DSA`, fixed market review history query bug, examples use SSE Composite Index
 - **v1.2.1** — Added Markdown output mode, auto-strip syntax in text mode, table card display
 - **v1.2.0** — Added chat commands (tasks/report/review/quotes/history/my reports), bilingual docstrings and code comments
