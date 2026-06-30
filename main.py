@@ -9,7 +9,6 @@ from aiohttp import web
 
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, filter
-from astrbot.api.message_components import Image
 from astrbot.api.star import Context, Star, register
 from astrbot.core.message.message_event_result import MessageChain
 
@@ -51,6 +50,7 @@ class DSAPusher(Star):
     def __init__(self, context: Context, config: dict | None = None):
         config = config or {}
         super().__init__(context)
+        self.config = config
         self.webhook_port = int(config.get("webhook_port", 8080))
         self.webhook_path = config.get("webhook_path", "/stock-analysis")
         # DSA API 地址（通过 webui 端口访问）
@@ -739,26 +739,12 @@ class DSAPusher(Star):
     def _save_config(self):
         """保存推送通知开关状态到配置文件"""
         try:
-            import json
-            # AstrBot 实际加载的配置文件路径
-            config_path = "/AstrBot/data/config/astrbot_plugin_dsa_pusher_config.json"
-            # 读取现有配置
-            try:
-                with open(config_path, encoding="utf-8") as f:
-                    content = f.read()
-                    # 处理 BOM 头
-                    if content.startswith("\ufeff"):
-                        content = content[1:]
-                    config = json.loads(content)
-            except (FileNotFoundError, json.JSONDecodeError):
-                config = {}
-
-            # 更新配置
-            config["enable_push_notification"] = self.enable_push_notification
-
-            # 写回文件
-            with open(config_path, "w", encoding="utf-8") as f:
-                json.dump(config, f, ensure_ascii=False, indent=2)
+            self.config["enable_push_notification"] = self.enable_push_notification
+            save_config = getattr(self.config, "save_config", None)
+            if callable(save_config):
+                save_config()
+            else:
+                logger.warning("推送通知开关仅保存在内存中，当前配置对象不支持 save_config()")
 
             logger.info(f"推送通知开关已保存: {self.enable_push_notification}")
         except Exception as e:
@@ -1135,14 +1121,17 @@ class DSAPusher(Star):
     ) -> str:
         """将 HTML 渲染为图片，返回图片 URL"""
         try:
-            viewport = "375x812" if mobile_viewport else "800x600"
-            payload = {
-                "html": html_doc,
-                "viewport": viewport,
+            options = {
+                "full_page": True,
+                "type": "jpeg",
                 "quality": self.image_quality,
-                "device_scale_factor_level": self.device_scale_factor_level,
             }
-            url = await self.context.html_render(payload)
+            url = await self.html_render(
+                html_doc,
+                {},
+                return_url=True,
+                options=options,
+            )
             if self.debug:
                 logger.info(f"每日股票分析适配器: 渲染完成, url_len={len(url)}")
             return url
@@ -1194,7 +1183,7 @@ class DSAPusher(Star):
                 else:
                     # 图片模式：逐张发送
                     for path in chunks:
-                        msg = MessageChain().message([Image.fromFileSystem(path)])
+                        msg = MessageChain().file_image(path)
                         await self.context.send_message(target_id, msg)
                         await asyncio.sleep(0.5)
 
