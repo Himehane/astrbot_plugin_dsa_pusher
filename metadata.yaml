@@ -1,7 +1,7 @@
 name: astrbot_plugin_dsa_pusher
 display_name: DSA推送器
 desc: 接收股票分析报告并通过Astrbot推送到聊天平台，支持文字/Markdown/图片三模式、多图拆分、多目标推送、聊天指令控制（分析查询/自选管理/推送开关/报告查看）
-version: v1.3.1
+version: v1.4.0
 author: Himehane
 repo: https://github.com/Himehane/astrbot_plugin_dsa_pusher
 

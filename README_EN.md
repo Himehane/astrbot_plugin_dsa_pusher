@@ -108,6 +108,7 @@ In image mode:
 
 ## Version History
 
+- **v1.4.0** — Adapted to AstrBot v4.2.5 rendering interface (`self.context.html_render()` → `self.html_render()`); fixed Image import (`Image.fromFileSystem()` → `MessageChain.file_image()`); reverted push toggle to local-only control, no longer calls DSA API to reduce coupling; removed `_api_put_config` and `_dsa_get_notification_channels` methods; cleaned up `_save_config` invalid branch; removed `_render_to_image` `mobile_viewport` dead parameter; push toggle now available in config panel
 - **v1.3.1** — Fixed push toggle commands (enable/disable push) version conflict after DSA API config update; added optimistic locking for reliable API writes; prompt users to refresh DSA WebUI page after config changes
 - **v1.3.0** — Added `/DSA help` command (aliases: `h`/`help`), lists all available commands with descriptions by category; added missing watchlist commands (my watchlist/add/remove) and push control commands (enable/disable/push status)
 - **v1.2.2** — Unified command prefix to `/DSA`, fixed market review history query bug, examples use SSE Composite Index
