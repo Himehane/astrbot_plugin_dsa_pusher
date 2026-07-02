@@ -108,6 +108,7 @@ In image mode:
 
 ## Version History
 
+- **v1.3.1** — Fixed push toggle commands (enable/disable push) version conflict after DSA API config update; added optimistic locking for reliable API writes; prompt users to refresh DSA WebUI page after config changes
 - **v1.3.0** — Added `/DSA help` command (aliases: `h`/`help`), lists all available commands with descriptions by category; added missing watchlist commands (my watchlist/add/remove) and push control commands (enable/disable/push status)
 - **v1.2.2** — Unified command prefix to `/DSA`, fixed market review history query bug, examples use SSE Composite Index
 - **v1.2.1** — Added Markdown output mode, auto-strip syntax in text mode, table card display
