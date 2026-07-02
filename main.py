@@ -278,64 +278,9 @@ class DSAPusher(Star):
             logger.error(f"DSA API 请求失败 [{url}]: {e}")
             return None
 
-    async def _api_put_config(self, key: str, value: str) -> bool:
-        """
-        通过 DSA 系统配置 API 更新指定配置项。
 
-        对应 PUT /api/v1/system/config，items 数组只包含要修改的字段。
-        使用乐观锁机制：先 GET 最新 config_version，再带版本号 PUT 提交。
-        注意：此操作会改变 DSA 的 config_version，DSA WebUI 页面会话
-        将因版本冲突无法直接保存，需刷新页面后操作。
 
-        返回 True 表示成功，False 表示失败。
-        """
-        import aiohttp
 
-        base_url = self.dsa_api_base.rstrip("/")
-        config_url = f"{base_url}/api/v1/system/config"
-        try:
-            async with aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=10)
-            ) as session:
-                # 1. 先 GET 拿到 config_version（乐观锁）
-                async with session.get(config_url) as resp:
-                    if resp.status != 200:
-                        logger.warning(f"DSA 配置读取失败 [{resp.status}]")
-                        return False
-                    cfg = await resp.json()
-                config_version = cfg.get("config_version", "")
-
-                # 2. 带 config_version PUT
-                payload = {
-                    "config_version": config_version,
-                    "items": [{"key": key, "value": value}],
-                }
-                async with session.put(config_url, json=payload) as resp:
-                    if resp.status == 200:
-                        return True
-                    body = await resp.text()
-                    logger.warning(
-                        f"DSA 配置更新失败 [{resp.status}] {key}={value!r}: "
-                        f"{body[:200]}"
-                    )
-                    return False
-        except Exception as e:
-            logger.error(f"DSA 配置更新请求失败 [{config_url}]: {e}")
-            return False
-
-    async def _dsa_get_notification_channels(self) -> str | None:
-        """
-        读取 DSA 当前的通知路由配置 (NOTIFICATION_REPORT_CHANNELS)。
-
-        返回当前值字符串；读取失败返回 None。
-        """
-        data = await self._api_get("api/v1/system/config")
-        if not data or "items" not in data:
-            return None
-        for item in data["items"]:
-            if item.get("key") == "NOTIFICATION_REPORT_CHANNELS":
-                return item.get("value", "")
-        return ""
 
     # ========================================
     # 指令组：DSA
@@ -780,100 +725,47 @@ class DSAPusher(Star):
         )
 
     @cmd_group.command("开启推送", aliases=["开启通知"])
-    async def cmd_enable_push(self, event: AstrMessageEvent, channel: str = ""):
+    async def cmd_enable_push(self, event: AstrMessageEvent):
         """
         开启 DSA 推送通知 / Enable DSA push notifications
 
-        /DSA 开启推送            → 默认使用 astrbot 渠道
-        /DSA 开启推送 custom     → 指定渠道
-        /DSA 开启推送 astrbot,custom → 多个渠道逗号隔开
+        本地开关，不与 DSA API 交互。也可在 AstrBot 设置面板中切换。
         """
-        target = channel.strip() if channel.strip() else "astrbot"
-        yield event.plain_result(f"⏳ 正在向 DSA 发送开启指令...\n目标渠道: {target}")
-
-        ok = await self._api_put_config("NOTIFICATION_REPORT_CHANNELS", target)
-        if ok:
-            self.enable_push_notification = True
-            self._save_config()
-            yield event.plain_result(
-                f"✅ 已开启 DSA 推送通知\n\n"
-                f"DSA 通知路由 NOTIFICATION_REPORT_CHANNELS → {target}\n"
-                f"分析报告将通过 [{target}] 渠道推送\n\n"
-                f"⚠️ 如需在 DSA 设置页修改其他配置，请先刷新页面"
-            )
-        else:
-            yield event.plain_result(
-                "❌ 开启失败\n\n"
-                "请检查 DSA 服务是否运行，"
-                "或手动在 DSA 设置页将通知路由改为 " + target
-            )
+        self.enable_push_notification = True
+        self._save_config()
+        yield event.plain_result(
+            "✅ 已开启 DSA 推送通知\n\n"
+            "分析报告将自动推送到配置的目标\n"
+            "也可在 AstrBot 设置面板中切换此项"
+        )
 
     @cmd_group.command("关闭推送", aliases=["关闭通知"])
     async def cmd_disable_push(self, event: AstrMessageEvent):
         """
         关闭 DSA 推送通知 / Disable DSA push notifications
 
-        通过 DSA API 将 NOTIFICATION_REPORT_CHANNELS 清空，
-        DSA 将停止向所有通知渠道发送报告。
+        本地开关，不与 DSA API 交互。也可在 AstrBot 设置面板中切换。
         """
-        yield event.plain_result("⏳ 正在向 DSA 发送关闭指令...")
-
-        ok = await self._api_put_config("NOTIFICATION_REPORT_CHANNELS", "")
-        if ok:
-            self.enable_push_notification = False
-            self._save_config()
-            yield event.plain_result(
-                "✅ 已关闭 DSA 推送通知\n\n"
-                "DSA 通知路由 NOTIFICATION_REPORT_CHANNELS → (空)\n"
-                "分析报告将不再自动推送\n"
-                "仍可通过指令手动查询历史报告\n\n"
-                "⚠️ 如需在 DSA 设置页修改其他配置，请先刷新页面"
-            )
-        else:
-            yield event.plain_result(
-                "❌ 关闭失败\n\n"
-                "请检查 DSA 服务是否运行，"
-                "或手动在 DSA 设置页清空通知路由"
-            )
+        self.enable_push_notification = False
+        self._save_config()
+        yield event.plain_result(
+            "✅ 已关闭 DSA 推送通知\n\n"
+            "分析报告将不再自动推送，但仍可通过指令手动查询\n"
+            "也可在 AstrBot 设置面板中切换此项"
+        )
 
     @cmd_group.command("推送状态", aliases=["查询推送"])
     async def cmd_push_status(self, event: AstrMessageEvent):
         """
         查询 DSA 推送通知状态 / Check DSA push notification status
-
-        通过 DSA API 读取当前 NOTIFICATION_REPORT_CHANNELS 配置，
-        显示已启用的通知渠道列表。不会修改任何配置。
         """
-        channels = await self._dsa_get_notification_channels()
-
-        if channels is None:
-            yield event.plain_result(
-                "⚠️ 无法连接 DSA 服务\n\n请检查 DSA API 地址配置是否正确"
-            )
-            return
-
-        if channels.strip():
-            parts = [c.strip() for c in channels.split(",") if c.strip()]
-            display = ", ".join(parts)
-            push_status = "✅ 开启"
-        else:
-            parts = []
-            display = "(空)"
-            push_status = "❌ 关闭"
-
-        lines = [
-            f"📢 DSA 推送通知状态: {push_status}\n",
-            f"通知路由: {display}",
-            "NOTIFICATION_REPORT_CHANNELS\n",
-        ]
-
-        if not parts:
-            lines.append("当前无通知渠道，可通过以下命令开启:")
-            lines.append("/DSA 开启推送 astrbot")
-            lines.append("/DSA 开启推送 custom")
-            lines.append("/DSA 开启推送 astrbot,custom")
-
-        yield event.plain_result("\n".join(lines))
+        status = "✅ 开启" if self.enable_push_notification else "❌ 关闭"
+        yield event.plain_result(
+            f"📢 DSA 推送通知状态: {status}\n\n"
+            "开关保存在本地配置文件中\n"
+            "可通过 /DSA 开启推送 或 /DSA 关闭推送 切换\n"
+            "也可在 AstrBot 设置面板中直接切换"
+        )
 
     def _save_config(self):
         """保存推送通知开关状态到配置文件"""
