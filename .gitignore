@@ -1,5 +1,7 @@
 # AstrBot 自动生成的配置缓存
 _conf_schema.json
+data/
+*.bak
 
 # Python 缓存
 __pycache__/
