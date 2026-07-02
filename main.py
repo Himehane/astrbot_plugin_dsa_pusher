@@ -878,15 +878,9 @@ class DSAPusher(Star):
     def _save_config(self):
         """保存推送通知开关状态到配置文件"""
         try:
-            self.config["enable_push_notification"] = self.enable_push_notification
-            save_config = getattr(self.config, "save_config", None)
-            if callable(save_config):
-                save_config()
-            else:
-                logger.warning("推送通知开关仅保存在内存中，当前配置对象不支持 save_config()")
             import json
 
-            # AstrBot 实际加载的配置文件路径
+            # AstrBot 插件配置文件路径
             config_path = "/AstrBot/data/config/astrbot_plugin_dsa_pusher_config.json"
             # 读取现有配置
             try:
@@ -1132,7 +1126,7 @@ class DSAPusher(Star):
             body_html = self._md_to_html(chunk_md)
             html_doc = self._wrap_html(body_html)
 
-            url = await self._render_to_image(html_doc, mobile_viewport=True)
+            url = await self._render_to_image(html_doc)
 
             # 下载图片到本地，避免路径问题
             local_path = await self._download_image(url, i)
@@ -1276,9 +1270,7 @@ class DSAPusher(Star):
 </body>
 </html>"""
 
-    async def _render_to_image(
-        self, html_doc: str, mobile_viewport: bool = False
-    ) -> str:
+    async def _render_to_image(self, html_doc: str) -> str:
         """将 HTML 渲染为图片，返回图片 URL"""
         try:
             options = {
