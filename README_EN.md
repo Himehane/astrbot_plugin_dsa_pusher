@@ -63,6 +63,12 @@ Send these commands directly in chat (prefixed with `/DSA` to avoid conflicts wi
 2. Restart AstrBot
 3. Configure in Web UI → Plugin Settings
 
+## Requirements
+
+- **AstrBot Version**: >= 4.2.5
+- Plugin uses the rendering interface (`html_render`) and MessageChain API introduced in AstrBot v4.2.5
+- For older AstrBot versions, use v1.3.1 of this plugin
+
 ## Configuration
 
 Configure via AstrBot Web UI → Plugin Settings:

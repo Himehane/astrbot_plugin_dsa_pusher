@@ -63,6 +63,12 @@ DSA 生成报告
 2. 重启 AstrBot
 3. 在 WebUI 中配置参数
 
+## 系统要求
+
+- **AstrBot 版本**: >= 4.2.5
+- 插件使用了 AstrBot v4.2.5 新增的渲染接口（`html_render`）和 MessageChain API
+- 如需在旧版本 AstrBot 上使用，需回退到 v1.3.1 版本
+
 ## 配置说明
 
 在 AstrBot 的 WebUI → 插件配置中进行设置：
