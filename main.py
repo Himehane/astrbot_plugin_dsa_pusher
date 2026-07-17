@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import hmac
 import json
+import os
 import re
 import time
 
@@ -12,12 +13,97 @@ from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star, register
 from astrbot.core.message.message_event_result import MessageChain
 
+# ====== 配置 Schema 自动补全 ======
+# 兼容从官方市场下载的旧版本（v1.3.1 tag），该版本缺失 _conf_schema.json
+# 导致 AstrBot >= 4.25.5 的 WebUI 配置页空白。以下代码在导入时自动补全。
+_CONF_SCHEMA_PATH = os.path.join(os.path.dirname(__file__), "_conf_schema.json")
+if not os.path.exists(_CONF_SCHEMA_PATH):
+    _FALLBACK_SCHEMA = {
+        "dsa_api_base": {
+            "description": "DSA API 地址",
+            "type": "string",
+            "default": "http://127.0.0.1:19000",
+            "hint": "通过 WebUI 端口访问的完整根 URL，例如 http://127.0.0.1:19000"
+        },
+        "debug": {
+            "description": "调试日志",
+            "type": "bool",
+            "default": False,
+            "hint": "关闭时仅输出警告和错误；开启后输出更详细的调试日志"
+        },
+        "output_mode": {
+            "description": "输出模式",
+            "type": "string",
+            "default": "text",
+            "options": ["text", "markdown", "image"],
+            "labels": {"text": "纯文本", "markdown": "Markdown", "image": "图片"},
+            "hint": "text 会清理 Markdown 语法，markdown 会保留 Markdown，image 会渲染为图片推送"
+        },
+        "split_image": {
+            "description": "图片拆分",
+            "type": "bool",
+            "default": False,
+            "hint": "仅图片模式有效。关闭为整张长图，开启为按章节拆分多张竖图"
+        },
+        "target_user_ids": {
+            "description": "推送目标 ID 列表",
+            "type": "list",
+            "default": [],
+            "hint": "填写用户或群 ID 列表；只需填写裸 ID，插件会自动补全平台前缀"
+        },
+        "webhook_port": {
+            "description": "Webhook 监听端口",
+            "type": "int",
+            "default": 8080,
+            "hint": "插件会在 0.0.0.0 上监听该端口"
+        },
+        "webhook_path": {
+            "description": "Webhook 路径",
+            "type": "string",
+            "default": "/stock-analysis",
+            "hint": "DSA 推送请求的 HTTP 路径"
+        },
+        "image_quality": {
+            "description": "图片质量",
+            "type": "int",
+            "default": 85,
+            "hint": "图片模式有效，建议范围 0-100"
+        },
+        "device_scale_factor_level": {
+            "description": "渲染缩放级别",
+            "type": "string",
+            "default": "normal",
+            "options": ["low", "normal", "high"],
+            "labels": {"low": "低", "normal": "普通", "high": "高"},
+            "hint": "图片模式有效。更高的缩放级别会提升清晰度，也会增加图片体积"
+        },
+        "viewport_width": {
+            "description": "渲染视口宽度",
+            "type": "int",
+            "default": 800,
+            "hint": "图片模式有效，单位为 px"
+        },
+        "enable_push_notification": {
+            "description": "自动推送通知",
+            "type": "bool",
+            "default": True,
+            "hint": "关闭后仍可通过聊天命令查询，但不会自动推送 Webhook 报告"
+        }
+    }
+    try:
+        with open(_CONF_SCHEMA_PATH, "w", encoding="utf-8") as _f:
+            json.dump(_FALLBACK_SCHEMA, _f, indent=2, ensure_ascii=False)
+        logger.info("DSA推送器: 已自动创建 _conf_schema.json（兼容旧版本市场包）")
+    except Exception as _e:
+        logger.warning(f"DSA推送器: 自动创建 _conf_schema.json 失败: {_e}")
+# ====== 配置 Schema 自动补全 END ======
+
 
 @register(
     "astrbot_plugin_dsa_pusher",
     "Himehane",
     "DSA推送器 - 接收股票分析报告并推送到聊天平台",
-    "v1.3.0",
+    "v1.4.2",
 )
 class DSAPusher(Star):
     """
