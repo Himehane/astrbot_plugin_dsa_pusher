@@ -1,8 +1,5 @@
 # Changelog / 更新日志
 
-本文件记录插件的所有版本变更，格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。  
-All notable changes to this plugin are documented in this file, following [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
-
 ## [v1.4.4] - 2026-08-20
 
 - **新增 DSA astrbot 渠道签名兼容**：支持 `X-Signature` + `X-Timestamp`（HMAC-SHA256，key 优先取 `secret_key`，未配置时回退 `webhook_token`）；Bearer 鉴权与签名验签双轨并行，DSA 推送无需额外配置即可通过；签名无效或缺失时返回 401  
