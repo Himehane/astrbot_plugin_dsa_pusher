@@ -113,17 +113,7 @@ In image mode:
 
 ## Version History
 
-- **v1.4.4** — Added DSA astrbot channel signature compatibility: accepts `X-Signature` + `X-Timestamp` (HMAC-SHA256, key = `secret_key`, falls back to `webhook_token`); Bearer auth and signature verification run in parallel, DSA push works without extra config; invalid or missing signature returns 401 / 新增 DSA astrbot 渠道签名兼容，Bearer 鉴权与签名验签双轨并行
-- **v1.4.3** — Added `webhook_token` config for Webhook authentication (Bearer / X-Auth-Token / ?token=), required for public/cloud deployments; unauthorized requests return 401 / 新增 webhook_token 鉴权配置，公网/云服务器部署时未携带有效 token 的请求返回 401
-- **v1.4.1** — Declared minimum AstrBot version requirement (>= 4.2.5), adapted to AstrBot v4.2.5 rendering interface and MessageChain API
-- **v1.4.0** — Adapted to AstrBot v4.2.5 rendering interface (`self.context.html_render()` → `self.html_render()`); fixed Image import (`Image.fromFileSystem()` → `MessageChain.file_image()`); reverted push toggle to local-only control, no longer calls DSA API to reduce coupling; removed `_api_put_config` and `_dsa_get_notification_channels` methods; cleaned up `_save_config` invalid branch; removed `_render_to_image` `mobile_viewport` dead parameter; push toggle now available in config panel
-- **v1.3.1** — Fixed push toggle commands (enable/disable push) version conflict after DSA API config update; added optimistic locking for reliable API writes; prompt users to refresh DSA WebUI page after config changes
-- **v1.3.0** — Added `/DSA help` command (aliases: `h`/`help`), lists all available commands with descriptions by category; added missing watchlist commands (my watchlist/add/remove) and push control commands (enable/disable/push status)
-- **v1.2.2** — Unified command prefix to `/DSA`, fixed market review history query bug, examples use SSE Composite Index
-- **v1.2.1** — Added Markdown output mode, auto-strip syntax in text mode, table card display
-- **v1.2.0** — Added chat commands (tasks/report/review/quotes/history/my reports), bilingual docstrings and code comments
-- **v1.1.0** — Added debug config toggle; quiet logs by default, verbose logs with target IDs in debug mode
-- **v1.0.0** — Initial release. Complete rewrite with split_image config, source-adaptive processing, multi-target push, full panel configuration
+See [CHANGELOG.md](CHANGELOG.md) for the full changelog.
 
 ## Acknowledgements
 
