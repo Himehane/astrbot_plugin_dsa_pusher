@@ -113,6 +113,8 @@ DSA 生成报告
 
 ## 版本历史
 
+- **v1.4.4** — 新增 DSA astrbot 渠道签名兼容：支持 `X-Signature` + `X-Timestamp`（HMAC-SHA256，key 优先取 `secret_key`，未配置时回退 `webhook_token`）；Bearer 鉴权与签名验签双轨并行，DSA 推送无需额外配置即可通过；签名无效或缺失时返回 401
+- **v1.4.3** — 新增 webhook_token 鉴权配置（Bearer / X-Auth-Token / ?token=），公网/云服务器部署时未携带有效 token 的请求返回 401
 - **v1.4.1** — 声明最低 AstrBot 版本要求（>= 4.2.5），适配 AstrBot v4.2.5 渲染接口和 MessageChain API
 - **v1.4.0** — 适配 AstrBot v4.2.5 渲染接口（`self.context.html_render()` → `self.html_render()`）；修复 Image 导入（`Image.fromFileSystem()` → `MessageChain.file_image()`）；推送开关改回纯本地控制，不再调用 DSA API，减少与 DSA 的耦合；移除 `_api_put_config` 和 `_dsa_get_notification_channels` 方法；清理 `_save_config` 无效分支；移除 `_render_to_image` 的 `mobile_viewport` 死参数；配置面板已支持推送开关
 - **v1.3.1** — 修复推送开关命令（开启推送/关闭推送）通过 DSA API 修改配置后版本冲突的问题；新增乐观锁机制确保 API 写入可靠；提示用户修改配置后刷新 DSA WebUI 页面

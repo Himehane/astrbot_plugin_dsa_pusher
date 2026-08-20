@@ -103,7 +103,7 @@ if not os.path.exists(_CONF_SCHEMA_PATH):
     "astrbot_plugin_dsa_pusher",
     "Himehane",
     "DSA推送器 - 接收股票分析报告并推送到聊天平台",
-    "v1.4.3",
+    "v1.4.4",
 )
 class DSAPusher(Star):
     """
@@ -248,7 +248,7 @@ class DSAPusher(Star):
             {
                 "status": "ok",
                 "plugin": "daily_stock_analysis_adapter",
-                "version": "v1.4.3",
+                "version": "v1.4.4",
                 "timestamp": time.time(),
             }
         )
@@ -259,6 +259,8 @@ class DSAPusher(Star):
             headers = dict(request.headers)
 
             # Webhook 鉴权：配置了 webhook_token 时校验，未配置则跳过（仅限内网）
+            # 支持两种方式：Bearer/X-Auth-Token/query token，或 DSA 的 X-Signature HMAC 签名
+            data = None
             if self.webhook_token:
                 provided = ""
                 auth_header = headers.get("Authorization", "")
@@ -268,15 +270,29 @@ class DSAPusher(Star):
                     provided = headers.get("X-Auth-Token", "").strip()
                 elif request.query.get("token"):
                     provided = request.query.get("token", "").strip()
-                if not provided or not hmac.compare_digest(
+
+                if provided and hmac.compare_digest(
                     provided, self.webhook_token
                 ):
+                    pass  # token 鉴权通过
+                elif headers.get("X-Signature"):
+                    # DSA astrbot 渠道：X-Timestamp + X-Signature 签名鉴权
+                    data = await request.json()
+                    if not await self.verify_signature(data, headers):
+                        logger.warning(
+                            "每日股票分析适配器: Webhook 鉴权失败 (签名无效)"
+                        )
+                        return web.json_response(
+                            {"error": "Unauthorized"}, status=401
+                        )
+                else:
                     logger.warning(
                         "每日股票分析适配器: Webhook 鉴权失败 (token 无效或缺失)"
                     )
                     return web.json_response({"error": "Unauthorized"}, status=401)
 
-            data = await request.json()
+            if data is None:
+                data = await request.json()
 
             content_len = len(data.get("content", ""))
             if self.debug:
@@ -308,15 +324,34 @@ class DSAPusher(Star):
             return web.json_response({"error": str(e)}, status=500)
 
     async def verify_signature(self, data: dict, headers: dict) -> bool:
-        """验证 HMAC 签名"""
-        if not self.secret_key:
-            return False
+        """
+        验证 HMAC 签名，兼容两种格式：
+        1. DSA astrbot 渠道：X-Timestamp + json.dumps(data, sort_keys=True)，
+           HMAC key 取 secret_key，未配置时回退 webhook_token
+        2. 旧格式：无 timestamp，json.dumps(data, separators=(",", ":"))
+        """
         signature = headers.get("X-Signature", "")
         if not signature:
             return False
+        key = (self.secret_key or self.webhook_token or "").strip()
+        if not key:
+            return False
+
+        # 格式1: DSA 兼容（X-Timestamp + sort_keys 序列化）
+        timestamp = headers.get("X-Timestamp", "")
+        if timestamp:
+            payload_json = json.dumps(data, sort_keys=True)
+            sign_data = f"{timestamp}.{payload_json}".encode("utf-8")
+            expected = hmac.new(
+                key.encode(), sign_data, hashlib.sha256
+            ).hexdigest()
+            if hmac.compare_digest(signature, expected):
+                return True
+
+        # 格式2: 旧格式（无 timestamp，compact 序列化）
         payload = json.dumps(data, separators=(",", ":"))
         expected = hmac.new(
-            self.secret_key.encode(), payload.encode(), hashlib.sha256
+            key.encode(), payload.encode(), hashlib.sha256
         ).hexdigest()
         return hmac.compare_digest(signature, expected)
 
