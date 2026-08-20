@@ -51,6 +51,12 @@
     "default": "/stock-analysis",
     "hint": "DSA 推送请求的 HTTP 路径"
   },
+  "webhook_token": {
+    "description": "Webhook 鉴权 Token",
+    "type": "string",
+    "default": "",
+    "hint": "留空不鉴权（仅限内网）；填写后请求需携带 Authorization: Bearer <token> 或 X-Auth-Token: <token>，否则返回 401"
+  },
   "image_quality": {
     "description": "图片质量",
     "type": "int",

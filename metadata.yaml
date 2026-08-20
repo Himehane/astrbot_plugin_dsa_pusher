@@ -1,7 +1,7 @@
 name: astrbot_plugin_dsa_pusher
 display_name: DSA推送器
 desc: 接收股票分析报告并通过Astrbot推送到聊天平台，支持文字/Markdown/图片三模式、多图拆分、多目标推送、聊天指令控制（分析查询/自选管理/推送开关/报告查看）
-version: v1.4.2
+version: v1.4.3
 astrbot_version: ">=4.2.5"
 author: Himehane
 repo: https://github.com/Himehane/astrbot_plugin_dsa_pusher
@@ -36,6 +36,10 @@ config:
     type: string
     default: /stock-analysis
     description: Webhook路径
+  - name: webhook_token
+    type: string
+    default: ""
+    description: "Webhook鉴权Token。留空=不鉴权(仅限内网使用)；填写后要求请求携带 Authorization: Bearer <token> 或 X-Auth-Token 头，否则返回401"
   - name: image_quality
     type: int
     default: 85

@@ -103,7 +103,7 @@ if not os.path.exists(_CONF_SCHEMA_PATH):
     "astrbot_plugin_dsa_pusher",
     "Himehane",
     "DSA推送器 - 接收股票分析报告并推送到聊天平台",
-    "v1.4.2",
+    "v1.4.3",
 )
 class DSAPusher(Star):
     """
@@ -139,6 +139,8 @@ class DSAPusher(Star):
         self.config = config
         self.webhook_port = int(config.get("webhook_port", 8080))
         self.webhook_path = config.get("webhook_path", "/stock-analysis")
+        # Webhook 鉴权 Token：留空=不鉴权；填写后要求 Authorization: Bearer 或 X-Auth-Token
+        self.webhook_token = config.get("webhook_token", "") or ""
         # DSA API 地址（通过 webui 端口访问）
         self.dsa_api_base = config.get("dsa_api_base", "http://127.0.0.1:19000")
         self.secret_key = config.get("secret_key")
@@ -177,10 +179,14 @@ class DSAPusher(Star):
         self._cached_platform = None
         self._context_token_fallback = None
 
-        if not self.enable_signature_verification:
+        if not self.enable_signature_verification and not self.webhook_token:
             logger.warning(
-                "每日股票分析适配器: 警告! 当前未启用签名验证，"
-                "请自行确保服务仅可内部网络访问"
+                "每日股票分析适配器: 警告! 未启用签名验证且未配置 webhook_token，"
+                "Webhook 完全开放，请确保服务仅限内网访问"
+            )
+        elif self.webhook_token:
+            logger.info(
+                "每日股票分析适配器: Webhook 鉴权已开启 (Authorization: Bearer <token>)"
             )
         if self.enable_signature_verification and self.secret_key is None:
             raise ValueError("每日股票分析适配器: 密钥未配置!")
@@ -242,7 +248,7 @@ class DSAPusher(Star):
             {
                 "status": "ok",
                 "plugin": "daily_stock_analysis_adapter",
-                "version": "v1.2.1",
+                "version": "v1.4.3",
                 "timestamp": time.time(),
             }
         )
@@ -250,8 +256,27 @@ class DSAPusher(Star):
     async def handle_webhook(self, request):
         """处理 Webhook 请求"""
         try:
-            data = await request.json()
             headers = dict(request.headers)
+
+            # Webhook 鉴权：配置了 webhook_token 时校验，未配置则跳过（仅限内网）
+            if self.webhook_token:
+                provided = ""
+                auth_header = headers.get("Authorization", "")
+                if auth_header.startswith("Bearer "):
+                    provided = auth_header[7:].strip()
+                elif headers.get("X-Auth-Token"):
+                    provided = headers.get("X-Auth-Token", "").strip()
+                elif request.query.get("token"):
+                    provided = request.query.get("token", "").strip()
+                if not provided or not hmac.compare_digest(
+                    provided, self.webhook_token
+                ):
+                    logger.warning(
+                        "每日股票分析适配器: Webhook 鉴权失败 (token 无效或缺失)"
+                    )
+                    return web.json_response({"error": "Unauthorized"}, status=401)
+
+            data = await request.json()
 
             content_len = len(data.get("content", ""))
             if self.debug:
