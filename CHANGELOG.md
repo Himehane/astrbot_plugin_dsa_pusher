@@ -1,5 +1,10 @@
 # Changelog / 更新日志
 
+## [v1.4.6] - 2026-08-24
+
+- 移除 metadata.yaml 中的 config 配置声明，插件配置 schema 统一由 `_conf_schema.json` 管理，消除双份声明不一致的风险  
+  Removed the config declaration from metadata.yaml; plugin config schema is now solely managed by `_conf_schema.json`, eliminating the risk of duplicated declarations drifting out of sync
+
 ## [v1.4.5] - 2026-08-24
 
 - 修复配置声明不一致：metadata.yaml 与 _conf_schema.json 对齐，补充 `enable_push_notification`（自动推送通知）配置项，确保插件市场收录与配置面板渲染正常  
