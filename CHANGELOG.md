@@ -1,5 +1,10 @@
 # Changelog / 更新日志
 
+## [v1.4.5] - 2026-08-24
+
+- 修复配置声明不一致：metadata.yaml 与 _conf_schema.json 对齐，补充 `enable_push_notification`（自动推送通知）配置项，确保插件市场收录与配置面板渲染正常  
+  Fixed config schema inconsistency: aligned metadata.yaml with _conf_schema.json, added `enable_push_notification` (auto push notification) config item, ensuring plugin marketplace indexing and config panel rendering work correctly
+
 ## [v1.4.4] - 2026-08-20
 
 - **新增 DSA astrbot 渠道签名兼容**：支持 `X-Signature` + `X-Timestamp`（HMAC-SHA256，key 优先取 `secret_key`，未配置时回退 `webhook_token`）；Bearer 鉴权与签名验签双轨并行，DSA 推送无需额外配置即可通过；签名无效或缺失时返回 401  
