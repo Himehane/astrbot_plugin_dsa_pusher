@@ -1,5 +1,10 @@
 # Changelog / 更新日志
 
+## [v1.4.7] - 2026-08-25
+
+- 内容与 v1.4.6 一致（配置 schema 统一由 `_conf_schema.json` 管理、`/health` 版本号同步）；因 Cloud 插件市场对已占用版本号不可复用，故 bump 至 v1.4.7 重新发布  
+  Same content as v1.4.6 (config schema solely managed by `_conf_schema.json`, `/health` version synced); bumped to v1.4.7 for republish since Cloud marketplace does not allow reusing a used version number
+
 ## [v1.4.6] - 2026-08-24
 
 - 移除 metadata.yaml 中的 config 配置声明，插件配置 schema 统一由 `_conf_schema.json` 管理，消除双份声明不一致的风险  

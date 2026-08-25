@@ -248,7 +248,7 @@ class DSAPusher(Star):
             {
                 "status": "ok",
                 "plugin": "daily_stock_analysis_adapter",
-                "version": "v1.4.6",
+                "version": "v1.4.7",
                 "timestamp": time.time(),
             }
         )
