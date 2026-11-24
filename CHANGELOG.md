@@ -1,5 +1,10 @@
 # Changelog / 更新日志
 
+## [v1.4.8] - 2026-11-24
+
+- 修复 `/DSA` 子命令参数解析：AstrBot 下发的 `event.message_str` 只剥离唤醒前缀（如 `/`），命令名本身仍保留在字符串中，导致 `split()[1]` 取到「删除自选 002042」这类混合串，6 位代码校验必然失败——`删除自选`、`增加自选` 实际从未生效；`历史分析`、`报告`（别名 `拉取`）的代码/名称/ID 参数同样受影响。现改为先剥离子命令名再取参数，并用 `(?<!\d)(\d{6})(?!\d)` 从消息中提取 6 位股票代码
+  Fixed `/DSA` subcommand argument parsing: AstrBot's `event.message_str` only strips the wake prefix (e.g. `/`), keeping the command name in the string, so `split()[1]` yielded mixed text like "删除自选 002042" and the 6-digit code check always failed — `删除自选` / `增加自选` never actually worked, and `历史分析` / `报告` (alias `拉取`) were affected the same way. Now the subcommand name is stripped before reading the argument, and the 6-digit code is extracted with `(?<!\d)(\d{6})(?!\d)`
+
 ## [v1.4.7] - 2026-08-25
 
 - 内容与 v1.4.6 一致（配置 schema 统一由 `_conf_schema.json` 管理、`/health` 版本号同步）；因 Cloud 插件市场对已占用版本号不可复用，故 bump 至 v1.4.7 重新发布  

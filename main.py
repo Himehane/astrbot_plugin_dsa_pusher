@@ -248,7 +248,7 @@ class DSAPusher(Star):
             {
                 "status": "ok",
                 "plugin": "daily_stock_analysis_adapter",
-                "version": "v1.4.7",
+                "version": "v1.4.8",
                 "timestamp": time.time(),
             }
         )
@@ -423,6 +423,33 @@ class DSAPusher(Star):
         except Exception as e:
             logger.error(f"DSA API 请求失败 [{url}]: {e}")
             return None
+
+    # ================================================================
+    #  指令参数解析
+    #
+    #  AstrBot 下发的 event.message_str 只剥离唤醒前缀（如 "/"），
+    #  命令名本身仍保留在字符串里，例如发送 "/DSA 删除自选 002042"
+    #  时 message_str 为 "DSA 删除自选 002042"。
+    #  因此不能直接用 split()[1] 取参数，否则会取到 "删除自选 002042"。
+    # ================================================================
+
+    @staticmethod
+    def _extract_command_arg(
+        event: AstrMessageEvent, command_names: list[str]
+    ) -> str:
+        """取出子命令名之后的参数原文（已去掉命令名本身）"""
+        text = event.get_message_str().strip()
+        for name in sorted(command_names, key=len, reverse=True):
+            idx = text.find(name)
+            if idx != -1:
+                return text[idx + len(name) :].strip()
+        return ""
+
+    @staticmethod
+    def _extract_stock_code(text: str) -> str:
+        """从消息中提取 6 位 A 股代码，取不到返回空字符串"""
+        m = re.search(r"(?<!\d)(\d{6})(?!\d)", text)
+        return m.group(1) if m else ""
 
 
 
@@ -609,15 +636,12 @@ class DSAPusher(Star):
         Yields:
             plain_result: 状态提示（查找中 / 推送中）
         """
-        text = event.get_message_str().strip()
-        parts = text.split(None, 1)
-        if len(parts) < 2:
+        keyword = self._extract_command_arg(event, ["历史分析"])
+        if not keyword:
             yield event.plain_result(
                 "❌ 用法：/DSA 历史分析 <股票代码或名称>\n例：/DSA 历史分析 000001"
             )
             return
-
-        keyword = parts[1].strip()
 
         # Step 1: 获取历史股票列表（含最新记录 ID）
         # Step 2: 先按股票代码精确匹配，再按中文名称匹配
@@ -773,15 +797,12 @@ class DSAPusher(Star):
         """
         添加自选股 / Add stock to watchlist
         """
-        text = event.get_message_str().strip()
-        parts = text.split(None, 1)
-        if len(parts) < 2:
+        code = self._extract_stock_code(event.get_message_str())
+        if not code:
             yield event.plain_result(
                 "❌ 用法：/DSA 增加自选 <股票代码>\n例：/DSA 增加自选 600519"
             )
             return
-
-        code = parts[1].strip()
         if not re.match(r"^\d{6}$", code):
             yield event.plain_result(f"❌ 股票代码格式错误：{code}\n请输入6位数字代码")
             return
@@ -825,15 +846,12 @@ class DSAPusher(Star):
         """
         删除自选股 / Remove stock from watchlist
         """
-        text = event.get_message_str().strip()
-        parts = text.split(None, 1)
-        if len(parts) < 2:
+        code = self._extract_stock_code(event.get_message_str())
+        if not code:
             yield event.plain_result(
                 "❌ 用法：/DSA 删除自选 <股票代码>\n例：/DSA 删除自选 600519"
             )
             return
-
-        code = parts[1].strip()
         if not re.match(r"^\d{6}$", code):
             yield event.plain_result(f"❌ 股票代码格式错误：{code}\n请输入6位数字代码")
             return
@@ -1021,12 +1039,8 @@ class DSAPusher(Star):
         Yields:
             plain_result: 状态提示（拉取中 / 推送中）
         """
-        text = event.get_message_str().strip()
         # 提取 ID 参数：不传则默认 "last"，传则用指定 ID
-        parts = text.split(None, 1)
-        task_id = "last"
-        if len(parts) > 1:
-            task_id = parts[1].strip()
+        task_id = self._extract_command_arg(event, ["报告", "拉取"]) or "last"
 
         if task_id == "last":
             # 获取最新任务
